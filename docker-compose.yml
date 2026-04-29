@@ -1,0 +1,181 @@
+version: '3.8'
+
+services:
+  # PostgreSQL 数据库
+  postgres:
+    image: postgres:15-alpine
+    container_name: rim-postgres
+    environment:
+      POSTGRES_USER: rim_user
+      POSTGRES_PASSWORD: rim_password_dev
+      POSTGRES_DB: rim_db
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - rim-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rim_user -d rim_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis
+  redis:
+    image: redis:7-alpine
+    container_name: rim-redis
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - rim-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # MinIO (对象存储)
+  minio:
+    image: minio/minio:latest
+    container_name: rim-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin123
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - rim-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+
+  # Go 主服务
+  go-api:
+    build:
+      context: ./backend-go
+      dockerfile: Dockerfile
+    container_name: rim-go-api
+    ports:
+      - "3000:3000"
+    environment:
+      - SERVER_PORT=3000
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_USER=rim_user
+      - DB_PASSWORD=rim_password_dev
+      - DB_NAME=rim_db
+      - JWT_SECRET=your_jwt_secret_key_change_in_production_32bytes!!
+      - PYTHON_AI_URL=http://python-ai:8000
+      - ENCRYPTION_KEY=32-byte-key-for-aes-encryption!!
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_started
+    networks:
+      - rim-network
+    volumes:
+      - ./backend-go:/app
+    restart: unless-stopped
+
+  # Python AI 服务
+  python-ai:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    container_name: rim-python-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - API_PORT=8000
+      - API_HOST=0.0.0.0
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - DEFAULT_AI_PROVIDER=openai
+      - DEFAULT_AI_MODEL=gpt-4
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=cpu
+      # AI API Keys (可选，用户可在界面配置)
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - rim-network
+    volumes:
+      - ./backend-python:/app
+    restart: unless-stopped
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend-python
+      dockerfile: Dockerfile
+    container_name: rim-celery-worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - WHISPER_MODEL=base
+      - WHISPER_DEVICE=cpu
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+      python-ai:
+        condition: service_started
+    networks:
+      - rim-network
+    volumes:
+      - ./backend-python:/app
+    restart: unless-stopped
+
+  # 前端 (开发模式)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: rim-frontend
+    ports:
+      - "5173:5173"
+    environment:
+      - VITE_API_URL=http://localhost:3000
+    depends_on:
+      - go-api
+    networks:
+      - rim-network
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  minio_data:
+    driver: local
+
+networks:
+  rim-network:
+    driver: bridge
