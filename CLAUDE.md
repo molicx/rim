@@ -7,7 +7,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 文章与播客智能提炼总结工具 (RIM - Reading Intelligence Manager)
 - 基于 AI 的内容提炼工具，支持文章和播客的智能总结、观点提取和交叉分析
 - 采用 Go + Python 微服务架构
-- 支持多 AI 模型切换（OpenAI/Claude/Gemini）
+- 支持多 AI 模型切换（OpenAI/Claude/Gemini + 自定义模型）
+- **新增**: 支持任何 OpenAI 兼容接口（DeepSeek, Qwen, Ollama 等）
 
 ## 项目结构
 
@@ -29,6 +30,7 @@ rim/
 - **数据库**: PostgreSQL (主数据), Redis (缓存/队列)
 - **存储**: MinIO / S3
 - **AI 模型**: OpenAI GPT-4, Claude 3.5, Gemini Pro, Whisper
+- **自定义模型**: 支持 OpenAI 兼容接口（DeepSeek, Qwen, Ollama, 智谱 AI 等）
 
 ### 前端
 - **框架**: React 18 + TypeScript
@@ -179,7 +181,20 @@ npm run type-check
 
 ## AI 模型适配器
 
-### 添加新模型
+### 支持的模型类型
+
+1. **原生适配器** (provider_type: "native")
+   - OpenAI: GPT-4, GPT-4o, GPT-3.5-turbo
+   - Claude: Claude 3.5 Sonnet, Claude 3 Opus
+   - Gemini: Gemini Pro, Gemini Pro Vision
+
+2. **通用适配器** (provider_type: "openai_compatible")
+   - 支持任何 OpenAI 兼容接口
+   - 示例: DeepSeek, Qwen, Ollama, 智谱 AI
+   - 使用 `GenericOpenAIAdapter`
+
+### 添加新的原生模型
+
 在 `backend-python/app/adapters/` 中创建新适配器：
 
 ```python
@@ -201,7 +216,30 @@ class NewModelAdapter(AIModelAdapter):
 
 然后在 `factory.py` 中注册：
 ```python
-def create_adapter(provider: str, api_key: str, model: str = None):
+def create_adapter(
+    provider: str,
+    api_key: str,
+    model: str = None,
+    provider_type: str = "native",
+    base_url: str = None
+):
+    if provider == "new_model":
+        return NewModelAdapter(api_key, model)
+    # ...
+```
+
+### 使用自定义模型（OpenAI 兼容）
+
+用户无需修改代码，直接在前端配置：
+1. 选择"自定义模型"
+2. 填写 provider 名称（如 deepseek）
+3. 填写 model 名称（如 deepseek-chat）
+4. 填写 base_url（如 https://api.deepseek.com/v1）
+5. 填写 API Key
+
+系统自动使用 `GenericOpenAIAdapter` 处理。
+
+详细配置指南: `docs/CUSTOM_MODELS.md`
     if provider == "new_model":
         return NewModelAdapter(api_key, model)
     # ...

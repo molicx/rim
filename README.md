@@ -5,12 +5,13 @@
 ### 已实现功能
 
 - ✅ 用户注册/登录系统（JWT 认证）
-- ✅ AI 模型配置管理（支持 OpenAI/Claude/Gemini）
+- ✅ AI 模型配置管理（支持 OpenAI/Claude/Gemini + 自定义模型）
 - ✅ 文本总结功能（直接粘贴）
 - ✅ URL 抓取功能
 - ✅ 历史记录管理
 - ✅ 前端界面（React + TypeScript）
 - ✅ Docker 容器化部署
+- ✅ **自定义模型支持**（DeepSeek/Qwen/Ollama 等 OpenAI 兼容接口）
 
 ## 快速开始
 
@@ -79,10 +80,22 @@ powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
 ### 2. 配置 AI 模型
 
 登录后，点击右上角"AI 配置"按钮：
+
+#### 预设模型
 - 选择 AI 提供商（OpenAI/Claude/Gemini）
 - 选择模型
 - 输入 API Key
 - 设置为默认配置
+
+#### 自定义模型（新功能）
+支持任何 OpenAI 兼容的 API 接口：
+- **DeepSeek**: deepseek-chat
+- **通义千问**: qwen-turbo
+- **Ollama**: 本地模型
+- **智谱 AI**: glm-4
+- 其他兼容接口
+
+详细配置指南参见 [docs/CUSTOM_MODELS.md](docs/CUSTOM_MODELS.md)
 
 ### 3. 创建总结
 
@@ -146,9 +159,10 @@ rim/
 - **状态**: Zustand
 
 ### AI 模型
-- OpenAI GPT-4 / GPT-4o
-- Anthropic Claude 3.5 Sonnet
+- OpenAI GPT-4 / GPT-4o / GPT-3.5-turbo
+- Anthropic Claude 3.5 Sonnet / Claude 3 Opus
 - Google Gemini Pro
+- **自定义模型**: 支持任何 OpenAI 兼容接口（DeepSeek, Qwen, Ollama, 智谱 AI 等）
 
 ## API 文档
 
@@ -172,7 +186,22 @@ Body: { "email": "user@example.com", "password": "password" }
 ```
 POST /api/v1/ai-configs
 Headers: Authorization: Bearer <token>
-Body: { "provider": "openai", "model": "gpt-4", "api_key": "sk-...", "is_default": true }
+Body: {
+  "provider": "openai",
+  "model": "gpt-4",
+  "api_key": "sk-...",
+  "is_default": true
+}
+
+# 自定义模型示例
+Body: {
+  "provider": "deepseek",
+  "provider_type": "openai_compatible",
+  "model": "deepseek-chat",
+  "base_url": "https://api.deepseek.com/v1",
+  "api_key": "sk-...",
+  "is_default": false
+}
 ```
 
 **获取配置列表**
