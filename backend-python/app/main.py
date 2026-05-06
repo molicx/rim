@@ -23,8 +23,11 @@ class SummarizeRequest(BaseModel):
     provider: str
     model: str
     api_key: str
+<<<<<<< HEAD
     provider_type: Optional[str] = "native"
     base_url: Optional[str] = None
+=======
+>>>>>>> ae3b01c4e8af0e6d305322a4556d7b23639ac717
 
 
 class ExtractRequest(BaseModel):
@@ -39,6 +42,7 @@ async def health_check():
 @app.post("/api/v1/summarize")
 async def summarize(request: SummarizeRequest):
     try:
+<<<<<<< HEAD
         adapter = create_adapter(
             request.provider,
             request.api_key,
@@ -46,6 +50,9 @@ async def summarize(request: SummarizeRequest):
             request.provider_type,
             request.base_url
         )
+=======
+        adapter = create_adapter(request.provider, request.api_key, request.model)
+>>>>>>> ae3b01c4e8af0e6d305322a4556d7b23639ac717
         result = await adapter.summarize(request.text)
         return result
     except ValueError as e:
