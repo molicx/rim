@@ -148,34 +148,39 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 配置类型
               </label>
-              <div className="flex gap-4">
-                <label className="flex items-center">
+              <div className="flex gap-4 mb-4">
+                <label className="flex items-center cursor-pointer">
                   <input
                     type="radio"
+                    name="configType"
                     value="preset"
                     checked={configType === 'preset'}
-                    onChange={(e) => {
+                    onChange={() => {
                       setConfigType('preset');
                       setProvider('openai');
                       setModel('gpt-4');
+                      setProviderType('native');
+                      setBaseUrl('');
                     }}
-                    className="mr-2"
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mr-2"
                   />
-                  预设模型
+                  <span className="text-sm font-medium text-gray-700">预设模型 (OpenAI/Claude/Gemini)</span>
                 </label>
-                <label className="flex items-center">
+                <label className="flex items-center cursor-pointer">
                   <input
                     type="radio"
+                    name="configType"
                     value="custom"
                     checked={configType === 'custom'}
-                    onChange={(e) => {
+                    onChange={() => {
                       setConfigType('custom');
                       setProvider('');
                       setModel('');
+                      setProviderType('openai_compatible');
                     }}
-                    className="mr-2"
+                    className="w-4 h-4 text-blue-600 border-gray-300 focus:ring-blue-500 mr-2"
                   />
-                  自定义模型
+                  <span className="text-sm font-medium text-gray-700">自定义模型 (DeepSeek/Qwen/Ollama等)</span>
                 </label>
               </div>
             </div>
@@ -219,6 +224,15 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
               </>
             ) : (
               <>
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-3 mb-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>自定义模型</strong>：支持任何 OpenAI 兼容的 API 接口
+                  </p>
+                  <p className="text-xs text-blue-600 mt-1">
+                    如 DeepSeek、通义千问、Ollama、智谱 AI 等
+                  </p>
+                </div>
+
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     提供商名称
