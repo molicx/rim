@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(docker-compose logs *)"
+      "Bash(docker-compose logs *)",
+      "WebFetch(domain:longcat.chat)"
     ]
   }
 }
