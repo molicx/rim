@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { AIConfig, Summary } from '@/types';
+import ConfigModal from '@/components/ConfigModal';
 
 const Dashboard: React.FC = () => {
   const [configs, setConfigs] = useState<AIConfig[]>([]);
@@ -267,140 +268,17 @@ const Dashboard: React.FC = () => {
 
       {showConfigModal && (
         <ConfigModal
+          isOpen={showConfigModal}
           onClose={() => {
             setShowConfigModal(false);
             loadConfigs();
           }}
+          onConfigAdded={() => {
+            loadConfigs();
+          }}
+          configs={configs}
         />
       )}
-    </div>
-  );
-};
-
-const ConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [provider, setProvider] = useState('openai');
-  const [model, setModel] = useState('gpt-4');
-  const [apiKey, setApiKey] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const modelOptions: Record<string, string[]> = {
-    openai: ['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'],
-    claude: ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'],
-    gemini: ['gemini-pro'],
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      await api.post('/ai-configs', {
-        provider,
-        model,
-        api_key: apiKey,
-        is_default: isDefault,
-      });
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || '配置失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">添加 AI 配置</h2>
-
-        {error && (
-          <div className="mb-4 bg-red-50 text-red-500 p-3 rounded">{error}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              提供商
-            </label>
-            <select
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
-                setModel(modelOptions[e.target.value][0]);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="claude">Claude</option>
-              <option value="gemini">Gemini</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              模型
-            </label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              {modelOptions[provider].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              API Key
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              placeholder="sk-..."
-            />
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isDefault"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="mr-2"
-            />
-            <label htmlFor="isDefault" className="text-sm text-gray-700">
-              设为默认
-            </label>
-          </div>
-
-          <div className="flex space-x-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 px-4 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2 px-4 border border-transparent rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? '保存中...' : '保存'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 };
