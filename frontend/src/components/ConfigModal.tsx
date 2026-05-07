@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import api from '@/services/api';
 import { AIConfig } from '@/types';
 
@@ -7,6 +7,8 @@ interface ConfigModalProps {
   onClose: () => void;
   onConfigAdded: () => void;
   configs: AIConfig[];
+  editingConfig?: AIConfig | null;
+  onEditConfig?: (config: AIConfig) => void;
 }
 
 const ConfigModal: React.FC<ConfigModalProps> = ({
@@ -14,6 +16,8 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
   onClose,
   onConfigAdded,
   configs,
+  editingConfig,
+  onEditConfig,
 }) => {
   const [configType, setConfigType] = useState<'preset' | 'custom'>('preset');
   const [provider, setProvider] = useState('openai');
@@ -24,6 +28,29 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
   const [isDefault, setIsDefault] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+
+  const isEditMode = !!editingConfig;
+
+  useEffect(() => {
+    if (editingConfig) {
+      setProvider(editingConfig.provider);
+      setProviderType(editingConfig.provider_type || 'native');
+      setModel(editingConfig.model);
+      setBaseUrl(editingConfig.base_url || '');
+      setIsDefault(editingConfig.is_default);
+      setConfigType(editingConfig.provider_type === 'openai_compatible' ? 'custom' : 'preset');
+      setApiKey('');
+    } else {
+      setConfigType('preset');
+      setProvider('openai');
+      setProviderType('native');
+      setModel('gpt-4');
+      setBaseUrl('');
+      setApiKey('');
+      setIsDefault(false);
+    }
+    setError('');
+  }, [editingConfig, isOpen]);
 
   const presetProviders = ['openai', 'claude', 'gemini'];
   const modelOptions: Record<string, string[]> = {
@@ -41,9 +68,12 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
       const payload: any = {
         provider,
         model,
-        api_key: apiKey,
         is_default: isDefault,
       };
+
+      if (apiKey) {
+        payload.api_key = apiKey;
+      }
 
       if (configType === 'custom') {
         payload.provider_type = 'openai_compatible';
@@ -54,13 +84,23 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
         payload.provider_type = 'native';
       }
 
-      await api.post('/ai-configs', payload);
+      if (isEditMode && editingConfig) {
+        await api.put(`/ai-configs/${editingConfig.id}`, payload);
+      } else {
+        if (!apiKey) {
+          setError('API Key 是必填项');
+          setLoading(false);
+          return;
+        }
+        await api.post('/ai-configs', payload);
+      }
+
       setApiKey('');
       setBaseUrl('');
       onConfigAdded();
       onClose();
     } catch (err: any) {
-      setError(err.response?.data?.error || '添加配置失败');
+      setError(err.response?.data?.error || (isEditMode ? '更新配置失败' : '添加配置失败'));
     } finally {
       setLoading(false);
     }
@@ -83,7 +123,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold">AI 模型配置</h2>
+          <h2 className="text-2xl font-bold">{isEditMode ? '编辑 AI 配置' : 'AI 模型配置'}</h2>
           <button
             onClick={onClose}
             className="text-gray-500 hover:text-gray-700"
@@ -124,12 +164,20 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
                     </div>
                   )}
                 </div>
-                  <button
-                    onClick={() => handleDelete(config.id)}
-                    className="text-red-600 hover:text-red-800"
-                  >
-                    删除
-                  </button>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => onEditConfig?.(config)}
+                      className="text-blue-600 hover:text-blue-800"
+                    >
+                      编辑
+                    </button>
+                    <button
+                      onClick={() => handleDelete(config.id)}
+                      className="text-red-600 hover:text-red-800"
+                    >
+                      删除
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>
@@ -137,7 +185,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
         </div>
 
         <div className="border-t pt-6">
-          <h3 className="text-lg font-semibold mb-3">添加新配置</h3>
+          <h3 className="text-lg font-semibold mb-3">{isEditMode ? '编辑配置' : '添加新配置'}</h3>
           {error && (
             <div className="mb-4 bg-red-50 text-red-500 p-3 rounded">
               {error}
@@ -287,15 +335,15 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
-                API Key
+                API Key {isEditMode && <span className="text-gray-500 text-xs">(留空则不修改)</span>}
               </label>
               <input
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                required
+                required={!isEditMode}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                placeholder="输入 API Key"
+                placeholder={isEditMode ? "留空则不修改" : "输入 API Key"}
               />
             </div>
 
@@ -317,7 +365,7 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
               disabled={loading}
               className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
             >
-              {loading ? '添加中...' : '添加配置'}
+              {loading ? (isEditMode ? '更新中...' : '添加中...') : (isEditMode ? '更新配置' : '添加配置')}
             </button>
           </form>
         </div>

@@ -81,11 +81,13 @@ func main() {
 		{
 			protected.POST("/ai-configs", aiConfigHandler.CreateConfig)
 			protected.GET("/ai-configs", aiConfigHandler.ListConfigs)
+			protected.PUT("/ai-configs/:id", aiConfigHandler.UpdateConfig)
 			protected.DELETE("/ai-configs/:id", aiConfigHandler.DeleteConfig)
 
 			protected.POST("/summaries", summaryHandler.CreateSummary)
 			protected.GET("/summaries", summaryHandler.ListSummaries)
 			protected.GET("/summaries/:id", summaryHandler.GetSummary)
+			protected.DELETE("/summaries/:id", summaryHandler.DeleteSummary)
 		}
 	}
 

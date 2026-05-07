@@ -57,7 +57,7 @@ func (h *SummaryHandler) CreateSummary(c *gin.Context) {
 		text = req.Text
 		sourceType = "text"
 	} else if req.URL != "" {
-		extractedText, err := h.extractTextFromURL(req.URL)
+		extractedText, extractedTitle, err := h.extractTextFromURL(req.URL)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to extract text from URL"})
 			return
@@ -65,6 +65,9 @@ func (h *SummaryHandler) CreateSummary(c *gin.Context) {
 		text = extractedText
 		sourceType = "url"
 		sourceURL = req.URL
+		if req.Title == "" && extractedTitle != "" {
+			req.Title = extractedTitle
+		}
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Either text or url is required"})
 		return
@@ -191,6 +194,24 @@ func (h *SummaryHandler) GetSummary(c *gin.Context) {
 	})
 }
 
+func (h *SummaryHandler) DeleteSummary(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	summaryID := c.Param("id")
+
+	var summary models.Summary
+	if err := h.DB.Where("id = ? AND user_id = ?", summaryID, userID).First(&summary).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Summary not found"})
+		return
+	}
+
+	if err := h.DB.Delete(&summary).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete summary"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Summary deleted successfully"})
+}
+
 func (h *SummaryHandler) callPythonAI(req PythonAIRequest) (*PythonAIResponse, error) {
 	jsonData, err := json.Marshal(req)
 	if err != nil {
@@ -216,24 +237,25 @@ func (h *SummaryHandler) callPythonAI(req PythonAIRequest) (*PythonAIResponse, e
 	return &aiResp, nil
 }
 
-func (h *SummaryHandler) extractTextFromURL(url string) (string, error) {
+func (h *SummaryHandler) extractTextFromURL(url string) (string, string, error) {
 	jsonData, _ := json.Marshal(map[string]string{"url": url})
 	resp, err := http.Post(h.PythonAIURL+"/api/v1/extract", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("failed to extract text")
+		return "", "", fmt.Errorf("failed to extract text")
 	}
 
 	var result struct {
-		Text string `json:"text"`
+		Text  string `json:"text"`
+		Title string `json:"title"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return result.Text, nil
+	return result.Text, result.Title, nil
 }
