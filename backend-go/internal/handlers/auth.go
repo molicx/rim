@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"time"
 
@@ -28,14 +29,21 @@ type LoginRequest struct {
 }
 
 func (h *AuthHandler) Register(c *gin.Context) {
+	log.Printf("Register request received from: %s", c.Request.RemoteAddr)
+	log.Printf("Request headers: %+v", c.Request.Header)
+
 	var req RegisterRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Failed to bind JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
+	log.Printf("Register request for email: %s", req.Email)
+
 	var existingUser models.User
 	if err := h.DB.Where("email = ?", req.Email).First(&existingUser).Error; err == nil {
+		log.Printf("Email already exists: %s", req.Email)
 		c.JSON(http.StatusConflict, gin.H{"error": "Email already registered"})
 		return
 	}
@@ -46,21 +54,25 @@ func (h *AuthHandler) Register(c *gin.Context) {
 	}
 
 	if err := user.SetPassword(req.Password); err != nil {
+		log.Printf("Failed to hash password: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
 		return
 	}
 
 	if err := h.DB.Create(&user).Error; err != nil {
+		log.Printf("Failed to create user: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create user"})
 		return
 	}
 
 	token, err := h.generateToken(user.ID, user.Email)
 	if err != nil {
+		log.Printf("Failed to generate token: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate token"})
 		return
 	}
 
+	log.Printf("User registered successfully: %s", user.Email)
 	c.JSON(http.StatusCreated, gin.H{
 		"token": token,
 		"user": gin.H{

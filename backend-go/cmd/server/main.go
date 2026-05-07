@@ -25,12 +25,34 @@ func main() {
 
 	r := gin.Default()
 
+	// 添加请求日志中间件
+	r.Use(func(c *gin.Context) {
+		log.Printf("Incoming request: %s %s from %s, Origin: %s",
+			c.Request.Method,
+			c.Request.URL.Path,
+			c.Request.RemoteAddr,
+			c.Request.Header.Get("Origin"))
+		c.Next()
+		log.Printf("Response status: %d for %s %s", c.Writer.Status(), c.Request.Method, c.Request.URL.Path)
+	})
+
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "http://localhost:3001"},
+		AllowOrigins: []string{
+			"http://localhost:5173",
+			"http://localhost:3001",
+			"http://127.0.0.1:5173",
+			"http://172.21.0.8:5173", // Docker 网络
+		},
 		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization"},
 		ExposeHeaders:    []string{"Content-Length"},
 		AllowCredentials: true,
+		AllowWildcard:    true,
+		AllowOriginFunc: func(origin string) bool {
+			// 允许所有 localhost 和 127.0.0.1 的请求
+			// 以及 Docker 内部网络 (172.x.x.x)
+			return true // 开发环境允许所有来源
+		},
 	}))
 
 	authHandler := &handlers.AuthHandler{
