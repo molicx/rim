@@ -25,6 +25,11 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  // 调试：组件加载时输出状态
+  React.useEffect(() => {
+    console.log('ConfigModal mounted, configType:', configType);
+  }, []);
+
   const presetProviders = ['openai', 'claude', 'gemini'];
   const modelOptions: Record<string, string[]> = {
     openai: ['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'],
@@ -138,6 +143,12 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
 
         <div className="border-t pt-6">
           <h3 className="text-lg font-semibold mb-3">添加新配置</h3>
+
+          {/* 调试信息 */}
+          <div className="mb-4 bg-yellow-50 border border-yellow-200 rounded p-2 text-xs">
+            <strong>调试信息:</strong> configType = {configType}
+          </div>
+
           {error && (
             <div className="mb-4 bg-red-50 text-red-500 p-3 rounded">
               {error}
