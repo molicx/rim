@@ -159,6 +159,7 @@ services:
       - "5173:5173"
     environment:
       - VITE_API_URL=http://localhost:3000
+      - VITE_API_TARGET=http://go-api:3000
     depends_on:
       - go-api
     networks:
