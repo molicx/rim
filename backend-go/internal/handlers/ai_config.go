@@ -23,6 +23,15 @@ type CreateAIConfigRequest struct {
 	IsDefault    bool   `json:"is_default"`
 }
 
+type UpdateAIConfigRequest struct {
+	Provider     string `json:"provider"`
+	ProviderType string `json:"provider_type"`
+	Model        string `json:"model"`
+	BaseURL      string `json:"base_url"`
+	APIKey       string `json:"api_key"`
+	IsDefault    *bool  `json:"is_default"`
+}
+
 func (h *AIConfigHandler) CreateConfig(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
@@ -113,4 +122,62 @@ func (h *AIConfigHandler) DeleteConfig(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Config deleted successfully"})
+}
+
+func (h *AIConfigHandler) UpdateConfig(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	configID := c.Param("id")
+
+	var config models.AIConfig
+	if err := h.DB.Where("id = ? AND user_id = ?", configID, userID).First(&config).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Config not found"})
+		return
+	}
+
+	var req UpdateAIConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.Provider != "" {
+		config.Provider = req.Provider
+	}
+	if req.ProviderType != "" {
+		config.ProviderType = req.ProviderType
+	}
+	if req.Model != "" {
+		config.Model = req.Model
+	}
+	if req.BaseURL != "" {
+		config.BaseURL = req.BaseURL
+	}
+	if req.APIKey != "" {
+		encryptedKey, err := utils.Encrypt(req.APIKey, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+			return
+		}
+		config.APIKey = encryptedKey
+	}
+	if req.IsDefault != nil {
+		if *req.IsDefault {
+			h.DB.Model(&models.AIConfig{}).Where("user_id = ?", userID).Update("is_default", false)
+		}
+		config.IsDefault = *req.IsDefault
+	}
+
+	if err := h.DB.Save(&config).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update config"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":            config.ID,
+		"provider":      config.Provider,
+		"provider_type": config.ProviderType,
+		"model":         config.Model,
+		"base_url":      config.BaseURL,
+		"is_default":    config.IsDefault,
+	})
 }

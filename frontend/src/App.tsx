@@ -5,6 +5,7 @@ import { useAuthStore } from './store/authStore';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import SummaryDetail from './pages/SummaryDetail';
 
 const queryClient = new QueryClient();
 
@@ -25,6 +26,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <Dashboard />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/summary/:id"
+            element={
+              <ProtectedRoute>
+                <SummaryDetail />
               </ProtectedRoute>
             }
           />

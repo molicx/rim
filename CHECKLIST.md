@@ -38,6 +38,7 @@
 - [x] 用户登录
 - [x] JWT 认证
 - [x] AI 配置管理
+- [x] 自定义模型支持（OpenAI 兼容接口）
 - [x] 文本总结
 - [x] URL 抓取
 - [x] 历史记录
@@ -93,9 +94,12 @@ powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
 - [ ] 访问 http://localhost:5173
 - [ ] 注册新用户
 - [ ] 登录系统
-- [ ] 配置 AI 模型
+- [ ] 配置预设 AI 模型（OpenAI/Claude/Gemini）
+- [ ] 配置自定义模型（如 DeepSeek）
 - [ ] 创建文本总结
+- [ ] 创建 URL 总结
 - [ ] 查看历史记录
+- [ ] 切换不同模型配置
 
 ## 已知问题
 

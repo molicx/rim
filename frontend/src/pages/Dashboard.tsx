@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
 import { AIConfig, Summary } from '@/types';
+import ConfigModal from '@/components/ConfigModal';
 
 const Dashboard: React.FC = () => {
   const [configs, setConfigs] = useState<AIConfig[]>([]);
@@ -14,6 +15,7 @@ const Dashboard: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showConfigModal, setShowConfigModal] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
   const [inputMode, setInputMode] = useState<'text' | 'url'>('text');
 
   const logout = useAuthStore((state) => state.logout);
@@ -43,6 +45,18 @@ const Dashboard: React.FC = () => {
       setSummaries(response.data);
     } catch (err) {
       console.error('Failed to load summaries:', err);
+    }
+  };
+
+  const handleDeleteSummary = async (id: number, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!confirm('确定要删除这条总结吗？')) return;
+
+    try {
+      await api.delete(`/summaries/${id}`);
+      loadSummaries();
+    } catch (err) {
+      alert('删除失败');
     }
   };
 
@@ -81,25 +95,44 @@ const Dashboard: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <nav className="bg-white shadow">
+    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-blue-50">
+      <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              <h1 className="text-2xl font-bold text-gray-900">RIM</h1>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center justify-center w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl">
+                <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </div>
+              <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">RIM</h1>
             </div>
-            <div className="flex items-center space-x-4">
+            <div className="flex items-center space-x-3">
               <button
-                onClick={() => setShowConfigModal(true)}
-                className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+                onClick={() => {
+                  setEditingConfig(null);
+                  setShowConfigModal(true);
+                }}
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all"
               >
-                AI 配置
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                  </svg>
+                  AI 配置
+                </span>
               </button>
               <button
                 onClick={handleLogout}
-                className="px-4 py-2 text-sm text-gray-700 hover:text-gray-900"
+                className="px-4 py-2 text-sm font-medium text-gray-700 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
               >
-                退出
+                <span className="flex items-center gap-2">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+                  </svg>
+                  退出
+                </span>
               </button>
             </div>
           </div>
@@ -239,10 +272,19 @@ const Dashboard: React.FC = () => {
                   summaries.map((summary) => (
                     <div
                       key={summary.id}
-                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer"
+                      className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow cursor-pointer relative group"
                       onClick={() => navigate(`/summary/${summary.id}`)}
                     >
-                      <h3 className="font-semibold text-gray-900 mb-2">
+                      <button
+                        onClick={(e) => handleDeleteSummary(summary.id, e)}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 hover:bg-red-50 rounded"
+                        title="删除"
+                      >
+                        <svg className="w-5 h-5 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                      <h3 className="font-semibold text-gray-900 mb-2 pr-8">
                         {summary.title}
                       </h3>
                       <p className="text-sm text-gray-600 mb-2 line-clamp-2">
@@ -267,140 +309,22 @@ const Dashboard: React.FC = () => {
 
       {showConfigModal && (
         <ConfigModal
+          isOpen={showConfigModal}
           onClose={() => {
             setShowConfigModal(false);
+            setEditingConfig(null);
             loadConfigs();
+          }}
+          onConfigAdded={() => {
+            loadConfigs();
+          }}
+          configs={configs}
+          editingConfig={editingConfig}
+          onEditConfig={(config) => {
+            setEditingConfig(config);
           }}
         />
       )}
-    </div>
-  );
-};
-
-const ConfigModal: React.FC<{ onClose: () => void }> = ({ onClose }) => {
-  const [provider, setProvider] = useState('openai');
-  const [model, setModel] = useState('gpt-4');
-  const [apiKey, setApiKey] = useState('');
-  const [isDefault, setIsDefault] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
-  const modelOptions: Record<string, string[]> = {
-    openai: ['gpt-4', 'gpt-4o', 'gpt-3.5-turbo'],
-    claude: ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229'],
-    gemini: ['gemini-pro'],
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-
-    try {
-      await api.post('/ai-configs', {
-        provider,
-        model,
-        api_key: apiKey,
-        is_default: isDefault,
-      });
-      onClose();
-    } catch (err: any) {
-      setError(err.response?.data?.error || '配置失败');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-6 max-w-md w-full">
-        <h2 className="text-xl font-bold mb-4">添加 AI 配置</h2>
-
-        {error && (
-          <div className="mb-4 bg-red-50 text-red-500 p-3 rounded">{error}</div>
-        )}
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              提供商
-            </label>
-            <select
-              value={provider}
-              onChange={(e) => {
-                setProvider(e.target.value);
-                setModel(modelOptions[e.target.value][0]);
-              }}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              <option value="openai">OpenAI</option>
-              <option value="claude">Claude</option>
-              <option value="gemini">Gemini</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              模型
-            </label>
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-            >
-              {modelOptions[provider].map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              API Key
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              required
-              className="w-full px-3 py-2 border border-gray-300 rounded-md"
-              placeholder="sk-..."
-            />
-          </div>
-
-          <div className="flex items-center">
-            <input
-              type="checkbox"
-              id="isDefault"
-              checked={isDefault}
-              onChange={(e) => setIsDefault(e.target.checked)}
-              className="mr-2"
-            />
-            <label htmlFor="isDefault" className="text-sm text-gray-700">
-              设为默认
-            </label>
-          </div>
-
-          <div className="flex space-x-4">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-2 px-4 border border-gray-300 rounded-md text-gray-700 hover:bg-gray-50"
-            >
-              取消
-            </button>
-            <button
-              type="submit"
-              disabled={loading}
-              className="flex-1 py-2 px-4 border border-transparent rounded-md text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {loading ? '保存中...' : '保存'}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 };

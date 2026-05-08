@@ -2,10 +2,13 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional
-import requests
-from bs4 import BeautifulSoup
+import logging
 
 from app.adapters.factory import create_adapter
+from app.utils import URLExtractor
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RIM AI Service", version="1.0.0")
 
@@ -17,17 +20,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+url_extractor = URLExtractor(timeout=15, max_retries=3)
+
 
 class SummarizeRequest(BaseModel):
     text: str
     provider: str
     model: str
     api_key: str
-<<<<<<< HEAD
     provider_type: Optional[str] = "native"
     base_url: Optional[str] = None
-=======
->>>>>>> ae3b01c4e8af0e6d305322a4556d7b23639ac717
 
 
 class ExtractRequest(BaseModel):
@@ -42,7 +44,6 @@ async def health_check():
 @app.post("/api/v1/summarize")
 async def summarize(request: SummarizeRequest):
     try:
-<<<<<<< HEAD
         adapter = create_adapter(
             request.provider,
             request.api_key,
@@ -50,9 +51,6 @@ async def summarize(request: SummarizeRequest):
             request.provider_type,
             request.base_url
         )
-=======
-        adapter = create_adapter(request.provider, request.api_key, request.model)
->>>>>>> ae3b01c4e8af0e6d305322a4556d7b23639ac717
         result = await adapter.summarize(request.text)
         return result
     except ValueError as e:
@@ -63,40 +61,34 @@ async def summarize(request: SummarizeRequest):
 
 @app.post("/api/v1/extract")
 async def extract_text(request: ExtractRequest):
+    """
+    从 URL 提取文本内容
+    使用多种提取策略确保最佳效果
+    """
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        logger.info(f"Extracting content from: {request.url}")
+        result = url_extractor.extract(request.url, method='auto')
+
+        if not result['text'] or len(result['text']) < 100:
+            raise HTTPException(
+                status_code=400,
+                detail="提取的文本内容过短，可能是页面需要 JavaScript 渲染或内容被保护"
+            )
+
+        logger.info(f"Successfully extracted {len(result['text'])} characters")
+        return {
+            "text": result['text'],
+            "title": result['title']
         }
-        response = requests.get(request.url, headers=headers, timeout=10)
-        response.raise_for_status()
 
-        soup = BeautifulSoup(response.content, 'html.parser')
-
-        for script in soup(["script", "style", "nav", "header", "footer", "aside"]):
-            script.decompose()
-
-        article = soup.find('article')
-        if article:
-            text = article.get_text(separator='\n', strip=True)
-        else:
-            main = soup.find('main') or soup.find('div', class_=['content', 'article', 'post'])
-            if main:
-                text = main.get_text(separator='\n', strip=True)
-            else:
-                text = soup.get_text(separator='\n', strip=True)
-
-        lines = [line.strip() for line in text.split('\n') if line.strip()]
-        text = '\n'.join(lines)
-
-        if len(text) < 100:
-            raise HTTPException(status_code=400, detail="Extracted text too short")
-
-        return {"text": text[:50000]}
-
-    except requests.RequestException as e:
-        raise HTTPException(status_code=400, detail=f"Failed to fetch URL: {str(e)}")
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Extraction error: {str(e)}")
+        logger.error(f"Extraction failed for {request.url}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"内容提取失败: {str(e)}"
+        )
 
 
 if __name__ == "__main__":
