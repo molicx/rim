@@ -131,4 +131,4 @@ const Register: React.FC = () => {
   );
 };
 
-export default Register;t Register;
+export default Register;
