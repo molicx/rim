@@ -295,7 +295,7 @@ const Dashboard: React.FC = () => {
                           {summary.provider} - {summary.model}
                         </span>
                         <span>
-                          {new Date(summary.created_at).toLocaleDateString()}}
+                          {new Date(summary.created_at).toLocaleDateString()}
                         </span>
                       </div>
                     </div>
