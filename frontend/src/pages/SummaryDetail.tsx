@@ -98,6 +98,13 @@ const SummaryDetail: React.FC = () => {
             </div>
           </div>
 
+          {summary.source_type === 'file' && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">来源</h2>
+              <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-sm">文件上传</span>
+            </div>
+          )}
+
           {summary.url && (
             <div className="mb-6">
               <h2 className="text-sm font-semibold text-gray-700 mb-2">原文链接</h2>

@@ -1,14 +1,11 @@
 """
 URL 内容提取模块
-支持多种提取策略和错误处理
+使用 BeautifulSoup 进行网页内容提取，无需额外编译依赖
 """
 import requests
 from bs4 import BeautifulSoup
-from readability import Document
-import trafilatura
-from typing import Optional, Dict
+from typing import Dict
 import logging
-from urllib.parse import urlparse
 import chardet
 
 logger = logging.getLogger(__name__)
@@ -29,165 +26,91 @@ class URLExtractor:
             'Connection': 'keep-alive',
         })
 
-    def extract(self, url: str, method: str = 'auto') -> Dict[str, str]:
+    def extract(self, url: str) -> Dict[str, str]:
         """提取 URL 内容"""
-        try:
-            html_content = self._fetch_url(url)
+        html_content = self._fetch_url(url)
+        return self._parse_html(html_content)
 
-            if method == 'auto':
-                return self._extract_auto(html_content, url)
-            elif method == 'trafilatura':
-                return self._extract_trafilatura(html_content, url)
-            elif method == 'readability':
-                return self._extract_readability(html_content, url)
-            else:
-                return self._extract_basic(html_content)
-
-        except Exception as e:
-            logger.error(f"Failed to extract from {url}: {str(e)}")
-            raise
-
-    def _fetch_url(self, url: str) -> bytes:
+    def _fetch_url(self, url: str) -> str:
         """获取 URL 内容"""
         last_error = None
-
         for attempt in range(self.max_retries):
             try:
-                response = self.session.get(
-                    url,
-                    timeout=self.timeout,
-                    allow_redirects=True
-                )
+                response = self.session.get(url, timeout=self.timeout, allow_redirects=True)
                 response.raise_for_status()
-                return response.content
-
+                encoding = chardet.detect(response.content)['encoding'] or 'utf-8'
+                return response.content.decode(encoding, errors='ignore')
             except requests.RequestException as e:
                 last_error = e
-                logger.warning(f"Attempt {attempt + 1} failed: {str(e)}")
-                if attempt < self.max_retries - 1:
-                    continue
-
+                logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
         raise last_error or Exception("Failed to fetch URL")
 
-    def _detect_encoding(self, content: bytes) -> str:
-        """检测内容编码"""
-        result = chardet.detect(content)
-        return result['encoding'] or 'utf-8'
+    def _parse_html(self, html: str) -> Dict[str, str]:
+        """解析 HTML 提取正文"""
+        soup = BeautifulSoup(html, 'html.parser')
 
-    def _extract_auto(self, html_content: bytes, url: str) -> Dict[str, str]:
-        """自动选择最佳提取方法"""
-        try:
-            result = self._extract_trafilatura(html_content, url)
-            if result['text'] and len(result['text']) > 200:
-                return result
-        except Exception as e:
-            logger.debug(f"Trafilatura failed: {str(e)}")
+        # 提取标题
+        title = self._extract_title(soup)
 
-        try:
-            result = self._extract_readability(html_content, url)
-            if result['text'] and len(result['text']) > 200:
-                return result
-        except Exception as e:
-            logger.debug(f"Readability failed: {str(e)}")
-
-        return self._extract_basic(html_content)
-
-    def _extract_trafilatura(self, html_content: bytes, url: str) -> Dict[str, str]:
-        """使用 Trafilatura 提取"""
-        text = trafilatura.extract(
-            html_content,
-            include_comments=False,
-            include_tables=True,
-            no_fallback=False,
-            favor_precision=True,
-            url=url
-        )
-
-        if not text:
-            raise ValueError("Trafilatura extraction returned empty")
-
-        metadata = trafilatura.extract_metadata(html_content)
-        title = metadata.title if metadata else self._extract_title_basic(html_content)
-
-        return {
-            'text': self._clean_text(text),
-            'title': title or 'Untitled'
-        }
-
-    def _extract_readability(self, html_content: bytes, url: str) -> Dict[str, str]:
-        """使用 Readability 提取"""
-        encoding = self._detect_encoding(html_content)
-        html_str = html_content.decode(encoding, errors='ignore')
-
-        doc = Document(html_str)
-        title = doc.title()
-
-        soup = BeautifulSoup(doc.summary(), 'lxml')
-        text = soup.get_text(separator='\n', strip=True)
-
-        if not text or len(text) < 100:
-            raise ValueError("Readability extraction returned insufficient text")
-
-        return {
-            'text': self._clean_text(text),
-            'title': title or 'Untitled'
-        }
-
-    def _extract_basic(self, html_content: bytes) -> Dict[str, str]:
-        """基础提取方法（后备方案）"""
-        encoding = self._detect_encoding(html_content)
-        html_str = html_content.decode(encoding, errors='ignore')
-
-        soup = BeautifulSoup(html_str, 'lxml')
-
-        title = self._extract_title_basic(html_content)
-
-        for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe']):
+        # 移除无关标签
+        for tag in soup(['script', 'style', 'nav', 'header', 'footer', 'aside', 'iframe', 'noscript']):
             tag.decompose()
 
+        # 优先提取 article 标签
         article = soup.find('article')
         if article:
             text = article.get_text(separator='\n', strip=True)
-        else:
-            main = soup.find('main') or soup.find('div', class_=['content', 'article', 'post'])
-            if main:
-                text = main.get_text(separator='\n', strip=True)
-            else:
-                text = soup.get_text(separator='\n', strip=True)
+            if len(text) > 200:
+                return {'text': self._clean_text(text), 'title': title}
 
-        if not text or len(text) < 100:
-            raise ValueError("Basic extraction returned insufficient text")
+        # 尝试 main 标签
+        main = soup.find('main')
+        if main:
+            text = main.get_text(separator='\n', strip=True)
+            if len(text) > 200:
+                return {'text': self._clean_text(text), 'title': title}
 
-        return {
-            'text': self._clean_text(text),
-            'title': title or 'Untitled'
-        }
+        # 尝试常见内容区域
+        for selector in ['div.content', 'div.article', 'div.post', 'div.entry', '#content', '#article']:
+            content = soup.select_one(selector)
+            if content:
+                text = content.get_text(separator='\n', strip=True)
+                if len(text) > 200:
+                    return {'text': self._clean_text(text), 'title': title}
 
-    def _extract_title_basic(self, html_content: bytes) -> str:
-        """提取标题"""
-        try:
-            encoding = self._detect_encoding(html_content)
-            html_str = html_content.decode(encoding, errors='ignore')
-            soup = BeautifulSoup(html_str, 'lxml')
+        # 最后尝试 body
+        body = soup.find('body')
+        if body:
+            text = body.get_text(separator='\n', strip=True)
+            if len(text) > 100:
+                return {'text': self._clean_text(text), 'title': title}
 
-            title_tag = soup.find('title')
-            if title_tag:
-                return title_tag.get_text().strip()
+        raise ValueError("无法提取有效内容")
 
-            h1 = soup.find('h1')
-            if h1:
-                return h1.get_text().strip()
+    def _extract_title(self, soup: BeautifulSoup) -> str:
+        """提取页面标题"""
+        # 优先 og:title
+        og_title = soup.find('meta', property='og:title')
+        if og_title and og_title.get('content'):
+            return og_title['content'].strip()
 
-            return 'Untitled'
-        except Exception:
-            return 'Untitled'
+        # title 标签
+        title_tag = soup.find('title')
+        if title_tag:
+            return title_tag.get_text().strip()
+
+        # h1 标签
+        h1 = soup.find('h1')
+        if h1:
+            return h1.get_text().strip()
+
+        return 'Untitled'
 
     def _clean_text(self, text: str) -> str:
         """清理文本"""
         lines = [line.strip() for line in text.split('\n') if line.strip()]
         text = '\n'.join(lines)
-
+        # 合并多余空行
         while '\n\n\n' in text:
             text = text.replace('\n\n\n', '\n\n')
-
         return text[:50000]

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
@@ -16,7 +16,11 @@ const Dashboard: React.FC = () => {
   const [error, setError] = useState('');
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [editingConfig, setEditingConfig] = useState<AIConfig | null>(null);
-  const [inputMode, setInputMode] = useState<'text' | 'url'>('text');
+  const [inputMode, setInputMode] = useState<'text' | 'url' | 'file'>('text');
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadedFileId, setUploadedFileId] = useState<number | null>(null);
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
@@ -63,6 +67,81 @@ const Dashboard: React.FC = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 验证文件类型
+    const allowedTypes = ['.pdf', '.docx', '.txt', '.md'];
+    const ext = '.' + file.name.split('.').pop()?.toLowerCase();
+    if (!allowedTypes.includes(ext)) {
+      setError('不支持的文件类型，仅支持 PDF、Word、TXT、Markdown');
+      return;
+    }
+
+    // 验证文件大小 (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+      setError('文件大小不能超过 10MB');
+      return;
+    }
+
+    setError('');
+    setUploadProgress(0);
+    setUploadedFileName(file.name);
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('title', title || file.name.replace(/\.[^/.]+$/, ''));
+
+    try {
+      const response = await api.post('/files/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+        onUploadProgress: (progressEvent) => {
+          const percent = Math.round((progressEvent.loaded * 100) / (progressEvent.total || 1));
+          setUploadProgress(percent);
+        },
+      });
+      setUploadedFileId(response.data.id);
+      setUploadProgress(100);
+    } catch (err: any) {
+      setError(err.response?.data?.error || '文件上传失败');
+      setUploadProgress(0);
+      setUploadedFileName('');
+    }
+  };
+
+  const handleFileSummarize = async () => {
+    if (!uploadedFileId) {
+      setError('请先上传文件');
+      return;
+    }
+    if (configs.length === 0) {
+      setError('请先配置 AI 模型');
+      return;
+    }
+
+    setError('');
+    setLoading(true);
+
+    try {
+      await api.post('/files/summarize', {
+        file_id: uploadedFileId,
+        title: title || uploadedFileName,
+        config_id: selectedConfig || undefined,
+      });
+      setUploadedFileId(null);
+      setUploadedFileName('');
+      setUploadProgress(0);
+      setTitle('');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      loadSummaries();
+    } catch (err: any) {
+      setError(err.response?.data?.error || '文件总结失败');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -169,7 +248,7 @@ const Dashboard: React.FC = () => {
                   <label className="block text-sm font-medium text-gray-700 mb-2">
                     输入方式
                   </label>
-                  <div className="flex space-x-4">
+                  <div className="flex space-x-2">
                     <button
                       type="button"
                       onClick={() => setInputMode('text')}
@@ -192,6 +271,17 @@ const Dashboard: React.FC = () => {
                     >
                       URL
                     </button>
+                    <button
+                      type="button"
+                      onClick={() => setInputMode('file')}
+                      className={`px-4 py-2 rounded ${
+                        inputMode === 'file'
+                          ? 'bg-blue-600 text-white'
+                          : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      文件
+                    </button>
                   </div>
                 </div>
 
@@ -203,13 +293,12 @@ const Dashboard: React.FC = () => {
                     <textarea
                       value={text}
                       onChange={(e) => setText(e.target.value)}
-                      required
                       rows={10}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       placeholder="粘贴文章内容..."
                     />
                   </div>
-                ) : (
+                ) : inputMode === 'url' ? (
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-2">
                       文章 URL
@@ -218,10 +307,52 @@ const Dashboard: React.FC = () => {
                       type="url"
                       value={url}
                       onChange={(e) => setUrl(e.target.value)}
-                      required
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                       placeholder="https://example.com/article"
                     />
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      上传文件
+                    </label>
+                    <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-500 transition-colors">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.txt,.md"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label htmlFor="file-upload" className="cursor-pointer">
+                        <svg className="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                          <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8m-12 4h.02" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                        </svg>
+                        <p className="mt-2 text-sm text-gray-600">
+                          {uploadedFileName || '点击选择文件或拖拽到此处'}
+                        </p>
+                        <p className="mt-1 text-xs text-gray-500">
+                          支持 PDF、Word、TXT、Markdown，最大 10MB
+                        </p>
+                      </label>
+                      {uploadProgress > 0 && uploadProgress < 100 && (
+                        <div className="mt-4">
+                          <div className="bg-gray-200 rounded-full h-2">
+                            <div className="bg-blue-600 h-2 rounded-full transition-all" style={{ width: `${uploadProgress}%` }} />
+                          </div>
+                          <p className="text-xs text-gray-500 mt-1">上传中... {uploadProgress}%</p>
+                        </div>
+                      )}
+                      {uploadedFileId && (
+                        <div className="mt-4 flex items-center justify-center gap-2 text-green-600">
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          <span className="text-sm">文件上传成功</span>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 
@@ -245,13 +376,24 @@ const Dashboard: React.FC = () => {
                   </div>
                 )}
 
-                <button
-                  type="submit"
-                  disabled={loading || configs.length === 0}
-                  className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  {loading ? '生成中...' : '生成总结'}
-                </button>
+                {inputMode === 'file' ? (
+                  <button
+                    type="button"
+                    onClick={handleFileSummarize}
+                    disabled={loading || !uploadedFileId || configs.length === 0}
+                    className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                  >
+                    {loading ? '解析并生成总结中...' : '解析文件并生成总结'}
+                  </button>
+                ) : (
+                  <button
+                    type="submit"
+                    disabled={loading || configs.length === 0}
+                    className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
+                  >
+                    {loading ? '生成中...' : '生成总结'}
+                  </button>
+                )}
 
                 {configs.length === 0 && (
                   <p className="text-sm text-red-500 text-center">
@@ -291,7 +433,13 @@ const Dashboard: React.FC = () => {
                         {summary.summary}
                       </p>
                       <div className="flex items-center justify-between text-xs text-gray-500">
-                        <span>
+                        <span className="flex items-center gap-2">
+                          {summary.source_type === 'file' && (
+                            <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">文件</span>
+                          )}
+                          {summary.source_type === 'url' && (
+                            <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs">URL</span>
+                          )}
                           {summary.provider} - {summary.model}
                         </span>
                         <span>
