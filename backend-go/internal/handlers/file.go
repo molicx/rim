@@ -206,6 +206,31 @@ func (h *FileHandler) SummarizeFile(c *gin.Context) {
 	})
 }
 
+func (h *FileHandler) callPythonAI(req PythonAIRequest) (*PythonAIResponse, error) {
+	jsonData, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := http.Post(h.PythonAIURL+"/api/v1/summarize", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("AI service returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var aiResp PythonAIResponse
+	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
+		return nil, err
+	}
+
+	return &aiResp, nil
+}
+
 func (h *FileHandler) extractTextFromFile(filePath, fileType string) (string, error) {
 	type ParseRequest struct {
 		FilePath string `json:"file_path"`
