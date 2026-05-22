@@ -6,13 +6,20 @@ WORKDIR /app
 RUN sed -i 's|http://deb.debian.org/debian|https://mirrors.aliyun.com/debian|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true && \
     sed -i 's|http://security.debian.org|https://mirrors.aliyun.com/debian-security|g' /etc/apt/sources.list.d/debian.sources 2>/dev/null || true
 
+# 安装系统依赖（PyMuPDF 需要）
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+    libmupdf-dev \
+    swig \
+    && rm -rf /var/lib/apt/lists/*
+
 # 设置 pip 使用国内镜像源（清华源）
 RUN pip config set global.index-url https://pypi.tuna.tsinghua.edu.cn/simple && \
     pip config set global.trusted-host pypi.tuna.tsinghua.edu.cn
 
 # 复制并安装 Python 依赖
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt --default-timeout=120
+RUN pip install --no-cache-dir -r requirements.txt --default-timeout=180
 
 # 复制应用代码
 COPY . .
