@@ -1,6 +1,6 @@
 # RIM - 文章与播客智能提炼总结工具
 
-## 第一阶段开发完成 ✓
+## 阶段2: 文件上传功能开发中 🚧
 
 ### 已实现功能
 
@@ -12,6 +12,8 @@
 - ✅ 前端界面（React + TypeScript）
 - ✅ Docker 容器化部署
 - ✅ **自定义模型支持**（DeepSeek/Qwen/Ollama 等 OpenAI 兼容接口）
+- ✅ **文件上传功能**（PDF/Word/TXT/Markdown）
+- ✅ **文件解析服务**（PyMuPDF + python-docx）
 
 ## 快速开始
 
@@ -99,11 +101,12 @@ powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
 
 ### 3. 创建总结
 
-支持两种输入方式：
+支持三种输入方式：
 - **文本输入**: 直接粘贴文章内容
 - **URL 输入**: 输入网页链接，自动抓取正文
+- **文件上传**: 上传 PDF、Word、TXT、Markdown 文件（最大 10MB）
 
-点击"生成总结"，等待 AI 处理完成。
+点击"生成总结"或"解析文件并生成总结"，等待 AI 处理完成。
 
 ### 4. 查看历史
 
@@ -231,6 +234,23 @@ Headers: Authorization: Bearer <token>
 ```
 GET /api/v1/summaries/:id
 Headers: Authorization: Bearer <token>
+```
+
+### 文件 API
+
+**上传文件**
+```
+POST /api/v1/files/upload
+Headers: Authorization: Bearer <token>
+Content-Type: multipart/form-data
+Body: file=<文件>, title=标题
+```
+
+**文件总结**
+```
+POST /api/v1/files/summarize
+Headers: Authorization: Bearer <token>
+Body: { "file_id": 1, "title": "标题", "config_id": 1 }
 ```
 
 ## 常见问题
