@@ -121,6 +121,7 @@ services:
       - rim-network
     volumes:
       - ./backend-python:/app
+      - uploads_data:/app/uploads
     restart: unless-stopped
 
   # Celery Worker
@@ -148,6 +149,7 @@ services:
       - rim-network
     volumes:
       - ./backend-python:/app
+      - uploads_data:/app/uploads
     restart: unless-stopped
 
   # 前端 (开发模式)
