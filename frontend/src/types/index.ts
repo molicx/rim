@@ -30,3 +30,10 @@ export interface AuthResponse {
   token: string;
   user: User;
 }
+
+export interface UploadedFile {
+  id: number;
+  title: string;
+  filename: string;
+  file_size: number;
+}

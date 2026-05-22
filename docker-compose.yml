@@ -89,6 +89,7 @@ services:
       - rim-network
     volumes:
       - ./backend-go:/app
+      - uploads_data:/app/uploads
     restart: unless-stopped
 
   # Python AI 服务
@@ -175,6 +176,8 @@ volumes:
   redis_data:
     driver: local
   minio_data:
+    driver: local
+  uploads_data:
     driver: local
 
 networks:

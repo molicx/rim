@@ -19,7 +19,7 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	if err := db.AutoMigrate(&models.User{}, &models.AIConfig{}, &models.Summary{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.AIConfig{}, &models.Summary{}, &models.File{}); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
@@ -71,6 +71,13 @@ func main() {
 		EncryptionKey: cfg.EncryptionKey,
 	}
 
+	fileHandler := &handlers.FileHandler{
+		DB:            db,
+		PythonAIURL:   cfg.PythonAIURL,
+		EncryptionKey: cfg.EncryptionKey,
+		UploadDir:     "/app/uploads",
+	}
+
 	api := r.Group("/api/v1")
 	{
 		api.POST("/auth/register", authHandler.Register)
@@ -88,6 +95,9 @@ func main() {
 			protected.GET("/summaries", summaryHandler.ListSummaries)
 			protected.GET("/summaries/:id", summaryHandler.GetSummary)
 			protected.DELETE("/summaries/:id", summaryHandler.DeleteSummary)
+
+			protected.POST("/files/upload", fileHandler.UploadFile)
+			protected.POST("/files/summarize", fileHandler.SummarizeFile)
 		}
 	}
 

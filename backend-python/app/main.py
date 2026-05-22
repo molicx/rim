@@ -6,11 +6,12 @@ import logging
 
 from app.adapters.factory import create_adapter
 from app.utils import URLExtractor
+from app.services.file_parser import parse_file
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="RIM AI Service", version="1.0.0")
+app = FastAPI(title="RIM AI Service", version="2.0.0")
 
 app.add_middleware(
     CORSMiddleware,
@@ -34,6 +35,11 @@ class SummarizeRequest(BaseModel):
 
 class ExtractRequest(BaseModel):
     url: str
+
+
+class ParseFileRequest(BaseModel):
+    file_path: str
+    file_type: str
 
 
 @app.get("/health")
@@ -61,13 +67,10 @@ async def summarize(request: SummarizeRequest):
 
 @app.post("/api/v1/extract")
 async def extract_text(request: ExtractRequest):
-    """
-    从 URL 提取文本内容
-    使用多种提取策略确保最佳效果
-    """
+    """从 URL 提取文本内容"""
     try:
         logger.info(f"Extracting content from: {request.url}")
-        result = url_extractor.extract(request.url, method='auto')
+        result = url_extractor.extract(request.url)
 
         if not result['text'] or len(result['text']) < 100:
             raise HTTPException(
@@ -88,6 +91,34 @@ async def extract_text(request: ExtractRequest):
         raise HTTPException(
             status_code=500,
             detail=f"内容提取失败: {str(e)}"
+        )
+
+
+@app.post("/api/v1/parse-file")
+async def parse_file_endpoint(request: ParseFileRequest):
+    """解析文件内容"""
+    try:
+        logger.info(f"Parsing file: {request.file_path}, type: {request.file_type}")
+        text = parse_file(request.file_path, request.file_type)
+
+        if not text or len(text.strip()) < 10:
+            raise HTTPException(
+                status_code=400,
+                detail="文件内容为空或无法解析"
+            )
+
+        logger.info(f"Successfully parsed {len(text)} characters")
+        return {"text": text}
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Parse failed: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"文件解析失败: {str(e)}"
         )
 
 
