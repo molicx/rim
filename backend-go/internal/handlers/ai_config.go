@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -216,11 +217,15 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 
 	var req CreateASRConfigRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		log.Printf("CreateASRConfig bind error: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请求参数错误: " + err.Error()})
 		return
 	}
 
-	// 根据提供商验证必填字段
+	log.Printf("CreateASRConfig: provider=%s, api_key=%s, api_secret=%s, app_id=%s, access_key_id=%s, access_secret=%s, app_key=%s, region=%s",
+		req.Provider, req.APIKey, req.ApiSecret, req.AppID, req.AccessKeyID, req.AccessSecret, req.AppKey, req.Region)
+
+	// 根据提供商验证必填字段（统一使用 api_key 字段接收）
 	switch req.Provider {
 	case "xunfei":
 		if req.APIKey == "" || req.ApiSecret == "" || req.AppID == "" {
@@ -228,8 +233,17 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 			return
 		}
 	case "aliyun":
-		if req.AccessKeyID == "" || req.AccessSecret == "" || req.AppKey == "" {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "阿里云配置需要 Access Key ID、Access Key Secret 和 App Key"})
+		// 阿里云：前端发送 access_key_id, access_key_secret, app_key
+		if req.AccessKeyID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "阿里云配置需要 Access Key ID"})
+			return
+		}
+		if req.AccessSecret == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "阿里云配置需要 Access Key Secret"})
+			return
+		}
+		if req.AppKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "阿里云配置需要 App Key"})
 			return
 		}
 	case "whisper":
