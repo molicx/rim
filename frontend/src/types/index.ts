@@ -37,3 +37,51 @@ export interface UploadedFile {
   filename: string;
   file_size: number;
 }
+
+// ==================== 音频转写类型 ====================
+
+export interface ASRConfig {
+  id: number;
+  provider: string;       // xunfei, aliyun, whisper
+  app_id?: string;
+  base_url?: string;
+  region?: string;
+  is_default: boolean;
+  created_at: string;
+}
+
+export interface ASRProvider {
+  name: string;
+  icon: string;
+  description: string;
+  fields: string[];
+}
+
+export interface AudioFile {
+  id: number;
+  title: string;
+  filename: string;
+  file_size: number;
+  file_type: string;
+  duration?: number;
+  created_at: string;
+}
+
+export interface TranscriptionSegment {
+  start: number;
+  end: number;
+  text: string;
+}
+
+export interface TranscriptionTask {
+  id: number;
+  audio_id: number;
+  title: string;
+  provider: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  result?: string;
+  segments?: TranscriptionSegment[];
+  error?: string;
+  created_at: string;
+  updated_at: string;
+}
