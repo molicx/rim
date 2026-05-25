@@ -32,6 +32,33 @@ type UpdateAIConfigRequest struct {
 	IsDefault    *bool  `json:"is_default"`
 }
 
+// ASR 配置请求
+type CreateASRConfigRequest struct {
+	Provider      string `json:"provider" binding:"required"`
+	APIKey        string `json:"api_key" binding:"required"`
+	ApiSecret     string `json:"api_secret"`
+	AppID         string `json:"app_id"`
+	AccessKeyID   string `json:"access_key_id"`
+	AccessSecret  string `json:"access_key_secret"`
+	AppKey        string `json:"app_key"`
+	Region        string `json:"region"`
+	BaseURL       string `json:"base_url"`
+	IsDefault     bool   `json:"is_default"`
+}
+
+type UpdateASRConfigRequest struct {
+	Provider      string `json:"provider"`
+	APIKey        string `json:"api_key"`
+	ApiSecret     string `json:"api_secret"`
+	AppID         string `json:"app_id"`
+	AccessKeyID   string `json:"access_key_id"`
+	AccessSecret  string `json:"access_key_secret"`
+	AppKey        string `json:"app_key"`
+	Region        string `json:"region"`
+	BaseURL       string `json:"base_url"`
+	IsDefault     *bool  `json:"is_default"`
+}
+
 func (h *AIConfigHandler) CreateConfig(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
@@ -180,4 +207,196 @@ func (h *AIConfigHandler) UpdateConfig(c *gin.Context) {
 		"base_url":      config.BaseURL,
 		"is_default":    config.IsDefault,
 	})
+}
+
+// ==================== ASR 配置管理 ====================
+
+func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	var req CreateASRConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 加密敏感字段
+	encryptedKey, err := utils.Encrypt(req.APIKey, h.EncryptionKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+		return
+	}
+
+	var encryptedSecret, encryptedAccessSecret string
+	if req.ApiSecret != "" {
+		encryptedSecret, err = utils.Encrypt(req.ApiSecret, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API secret"})
+			return
+		}
+	}
+	if req.AccessSecret != "" {
+		encryptedAccessSecret, err = utils.Encrypt(req.AccessSecret, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access secret"})
+			return
+		}
+	}
+
+	if req.IsDefault {
+		h.DB.Model(&models.ASRConfig{}).Where("user_id = ?", userID).Update("is_default", false)
+	}
+
+	config := models.ASRConfig{
+		UserID:         userID,
+		Provider:       req.Provider,
+		APIKey:         encryptedKey,
+		ApiSecret:      encryptedSecret,
+		AppID:          req.AppID,
+		AccessKeyID:    req.AccessKeyID,
+		AccessSecret:   encryptedAccessSecret,
+		AppKey:         req.AppKey,
+		Region:         req.Region,
+		BaseURL:        req.BaseURL,
+		IsDefault:      req.IsDefault,
+	}
+
+	if err := h.DB.Create(&config).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to create ASR config"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":         config.ID,
+		"provider":   config.Provider,
+		"app_id":     config.AppID,
+		"region":     config.Region,
+		"base_url":   config.BaseURL,
+		"is_default": config.IsDefault,
+		"created_at": config.CreatedAt,
+	})
+}
+
+func (h *AIConfigHandler) ListASRConfigs(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	var configs []models.ASRConfig
+	if err := h.DB.Where("user_id = ?", userID).Find(&configs).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch ASR configs"})
+		return
+	}
+
+	result := make([]gin.H, len(configs))
+	for i, config := range configs {
+		result[i] = gin.H{
+			"id":         config.ID,
+			"provider":   config.Provider,
+			"app_id":     config.AppID,
+			"region":     config.Region,
+			"base_url":   config.BaseURL,
+			"is_default": config.IsDefault,
+			"created_at": config.CreatedAt,
+		}
+	}
+
+	c.JSON(http.StatusOK, result)
+}
+
+func (h *AIConfigHandler) UpdateASRConfig(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	configID := c.Param("id")
+
+	var config models.ASRConfig
+	if err := h.DB.Where("id = ? AND user_id = ?", configID, userID).First(&config).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ASR config not found"})
+		return
+	}
+
+	var req UpdateASRConfigRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// 更新字段
+	if req.Provider != "" {
+		config.Provider = req.Provider
+	}
+	if req.APIKey != "" {
+		encryptedKey, err := utils.Encrypt(req.APIKey, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+			return
+		}
+		config.APIKey = encryptedKey
+	}
+	if req.ApiSecret != "" {
+		encryptedSecret, err := utils.Encrypt(req.ApiSecret, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API secret"})
+			return
+		}
+		config.ApiSecret = encryptedSecret
+	}
+	if req.AppID != "" {
+		config.AppID = req.AppID
+	}
+	if req.AccessKeyID != "" {
+		config.AccessKeyID = req.AccessKeyID
+	}
+	if req.AccessSecret != "" {
+		encryptedAccessSecret, err := utils.Encrypt(req.AccessSecret, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access secret"})
+			return
+		}
+		config.AccessSecret = encryptedAccessSecret
+	}
+	if req.AppKey != "" {
+		config.AppKey = req.AppKey
+	}
+	if req.Region != "" {
+		config.Region = req.Region
+	}
+	if req.BaseURL != "" {
+		config.BaseURL = req.BaseURL
+	}
+	if req.IsDefault != nil {
+		if *req.IsDefault {
+			h.DB.Model(&models.ASRConfig{}).Where("user_id = ?", userID).Update("is_default", false)
+		}
+		config.IsDefault = *req.IsDefault
+	}
+
+	if err := h.DB.Save(&config).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update ASR config"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         config.ID,
+		"provider":   config.Provider,
+		"app_id":     config.AppID,
+		"region":     config.Region,
+		"base_url":   config.BaseURL,
+		"is_default": config.IsDefault,
+	})
+}
+
+func (h *AIConfigHandler) DeleteASRConfig(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	configID := c.Param("id")
+
+	result := h.DB.Where("id = ? AND user_id = ?", configID, userID).Delete(&models.ASRConfig{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete ASR config"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "ASR config not found"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "ASR config deleted successfully"})
 }
