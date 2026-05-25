@@ -1,13 +1,15 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, Dict, Any
 import logging
 
 from app.adapters.factory import create_adapter
 from app.utils import URLExtractor
 from app.services.file_parser import parse_file
 from app.services.pdf_export import generate_pdf
+from app.services.transcription import TranscriptionService
+from app.adapters.asr import ASRFactory
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -168,6 +170,88 @@ async def export_pdf(request: ExportPDFRequest):
     except Exception as e:
         logger.error(f"PDF export failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"PDF 生成失败: {str(e)}")
+
+
+# ==================== ASR 转写 API ====================
+
+class TranscribeAPIRequest(BaseModel):
+    task_id: int
+    audio_path: str
+    provider: str
+    config: Dict[str, Any] = {}
+
+
+@app.get("/api/v1/asr/providers")
+async def list_asr_providers():
+    """列出可用的 ASR 提供商"""
+    providers = ASRFactory.list_providers()
+    provider_info = {
+        "xunfei": {
+            "name": "讯飞开放平台",
+            "icon": "🦊",
+            "description": "中文识别准确率最高，支持多种方言",
+            "fields": ["api_key", "api_secret", "app_id"],
+        },
+        "aliyun": {
+            "name": "阿里云智能语音",
+            "icon": "☁️",
+            "description": "稳定可靠，支持实时识别",
+            "fields": ["access_key_id", "access_key_secret", "app_key"],
+        },
+        "whisper": {
+            "name": "OpenAI Whisper",
+            "icon": "🤖",
+            "description": "支持云端 API 和本地模型",
+            "fields": ["api_key"],
+        },
+    }
+    return {
+        "providers": providers,
+        "info": {k: v for k, v in provider_info.items() if k in providers},
+    }
+
+
+@app.post("/api/v1/transcribe")
+async def transcribe_audio(request: TranscribeAPIRequest):
+    """执行音频转写（供 Celery 或 Go 调用）"""
+    try:
+        service = TranscriptionService()
+
+        # 验证音频文件
+        is_valid, err_msg = service.validate_audio_file(request.audio_path)
+        if not is_valid:
+            raise HTTPException(status_code=400, detail=err_msg)
+
+        # 转换为 WAV 格式（如果需要）
+        audio_path = service.convert_to_wav(request.audio_path)
+
+        # 执行转写
+        result = await service.transcribe(
+            audio_path,
+            request.provider,
+            request.config,
+        )
+
+        # 清理临时文件
+        if audio_path != request.audio_path:
+            import os
+            os.remove(audio_path)
+
+        return {
+            "task_id": request.task_id,
+            "status": "completed",
+            "text": result.text,
+            "segments": [
+                {"start": s.start, "end": s.end, "text": s.text}
+                for s in result.segments
+            ],
+            "duration": result.duration,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"转写失败: {str(e)}")
 
 
 if __name__ == "__main__":

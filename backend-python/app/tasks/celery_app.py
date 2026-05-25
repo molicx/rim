@@ -12,7 +12,7 @@ celery_app = Celery(
     "rim_tasks",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks"]  # 包含任务模块
+    include=["app.tasks.ai_tasks", "app.tasks.audio_tasks"]  # 包含任务模块
 )
 
 # Celery 配置

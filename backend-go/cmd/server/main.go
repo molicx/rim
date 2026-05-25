@@ -19,7 +19,15 @@ func main() {
 		log.Fatal("Failed to connect to database:", err)
 	}
 
-	if err := db.AutoMigrate(&models.User{}, &models.AIConfig{}, &models.Summary{}, &models.File{}); err != nil {
+	if err := db.AutoMigrate(
+		&models.User{},
+		&models.AIConfig{},
+		&models.Summary{},
+		&models.File{},
+		&models.ASRConfig{},
+		&models.Audio{},
+		&models.TranscriptionTask{},
+	); err != nil {
 		log.Fatal("Failed to migrate database:", err)
 	}
 
@@ -78,6 +86,13 @@ func main() {
 		UploadDir:     "/app/uploads",
 	}
 
+	audioHandler := &handlers.AudioHandler{
+		DB:            db,
+		PythonAIURL:   cfg.PythonAIURL,
+		EncryptionKey: cfg.EncryptionKey,
+		UploadDir:     "/app/uploads",
+	}
+
 	api := r.Group("/api/v1")
 	{
 		api.POST("/auth/register", authHandler.Register)
@@ -99,6 +114,18 @@ func main() {
 
 			protected.POST("/files/upload", fileHandler.UploadFile)
 			protected.POST("/files/summarize", fileHandler.SummarizeFile)
+
+			// ASR 配置
+			protected.POST("/asr-configs", aiConfigHandler.CreateASRConfig)
+			protected.GET("/asr-configs", aiConfigHandler.ListASRConfigs)
+			protected.PUT("/asr-configs/:id", aiConfigHandler.UpdateASRConfig)
+			protected.DELETE("/asr-configs/:id", aiConfigHandler.DeleteASRConfig)
+
+			// 音频和转写
+			protected.POST("/audio/upload", audioHandler.UploadAudio)
+			protected.POST("/audio/transcribe", audioHandler.TranscribeAudio)
+			protected.GET("/audio/transcriptions", audioHandler.ListTranscriptionTasks)
+			protected.GET("/audio/transcriptions/:id", audioHandler.GetTranscriptionStatus)
 		}
 	}
 
