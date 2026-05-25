@@ -7,7 +7,7 @@ import json
 import time
 from typing import Dict, Optional
 
-import aiohttp
+import httpx
 
 from . import ASRProvider, TranscriptionResult, TranscriptionSegment
 
@@ -50,26 +50,26 @@ class AliyunASR(ASRProvider):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, data=audio_data, headers=headers) as resp:
-                    result = await resp.json()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, content=audio_data, headers=headers, timeout=60.0)
+                result = response.json()
 
-                    if result.get('status') != 20000000:
-                        logger.error(f"Aliyun ASR error: {result}")
-                        raise Exception(f"ASR failed: {result.get('message', 'Unknown error')}")
+                if result.get('status') != 20000000:
+                    logger.error(f"Aliyun ASR error: {result}")
+                    raise Exception(f"ASR failed: {result.get('message', 'Unknown error')}")
 
-                    text = result.get('result', '')
+                text = result.get('result', '')
 
-                    return TranscriptionResult(
-                        text=text,
-                        segments=[TranscriptionSegment(
-                            start=0,
-                            end=result.get('duration', 0) / 1000,
-                            text=text
-                        )],
-                        duration=result.get('duration', 0) / 1000,
-                        language="zh"
-                    )
+                return TranscriptionResult(
+                    text=text,
+                    segments=[TranscriptionSegment(
+                        start=0,
+                        end=result.get('duration', 0) / 1000,
+                        text=text
+                    )],
+                    duration=result.get('duration', 0) / 1000,
+                    language="zh"
+                )
         except Exception as e:
             logger.error(f"Aliyun ASR request failed: {e}")
             raise

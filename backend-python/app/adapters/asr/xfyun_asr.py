@@ -12,7 +12,7 @@ import uuid
 from typing import Dict, Optional
 from urllib.parse import urlencode
 
-import aiohttp
+import httpx
 
 from . import ASRProvider, TranscriptionResult, TranscriptionSegment
 
@@ -112,27 +112,27 @@ class XunfeiASR(ASRProvider):
         }
 
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=body) as resp:
-                    result = await resp.json()
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=body, timeout=60.0)
+                result = response.json()
 
-                    if result.get('code') != 0:
-                        logger.error(f"Xunfei ASR error: {result}")
-                        return None
+                if result.get('code') != 0:
+                    logger.error(f"Xunfei ASR error: {result}")
+                    return None
 
-                    data = result.get('data', {})
-                    text = data.get('result', {}).get('text', '')
+                data = result.get('data', {})
+                text = data.get('result', {}).get('text', '')
 
-                    return TranscriptionResult(
-                        text=text,
-                        segments=[TranscriptionSegment(
-                            start=index * 60,
-                            end=(index + 1) * 60,
-                            text=text
-                        )],
-                        duration=60,
-                        language="zh"
-                    )
+                return TranscriptionResult(
+                    text=text,
+                    segments=[TranscriptionSegment(
+                        start=index * 60,
+                        end=(index + 1) * 60,
+                        text=text
+                    )],
+                    duration=60,
+                    language="zh"
+                )
         except Exception as e:
             logger.error(f"Xunfei ASR request failed: {e}")
             return None
