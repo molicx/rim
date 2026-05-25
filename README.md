@@ -1,19 +1,21 @@
 # RIM - 文章与播客智能提炼总结工具
 
-## 阶段2: 文件上传功能开发中 🚧
+## 阶段2: 文件支持与导出 ✅
 
 ### 已实现功能
 
 - ✅ 用户注册/登录系统（JWT 认证）
 - ✅ AI 模型配置管理（支持 OpenAI/Claude/Gemini + 自定义模型）
 - ✅ 文本总结功能（直接粘贴）
-- ✅ URL 抓取功能
-- ✅ 历史记录管理
+- ✅ URL 抓取功能（增强版，支持反爬虫）
+- ✅ 历史记录管理（查看/删除）
 - ✅ 前端界面（React + TypeScript）
 - ✅ Docker 容器化部署
 - ✅ **自定义模型支持**（DeepSeek/Qwen/Ollama 等 OpenAI 兼容接口）
-- ✅ **文件上传功能**（PDF/Word/TXT/Markdown）
+- ✅ **文件上传功能**（PDF/Word/TXT/Markdown，拖拽上传）
 - ✅ **文件解析服务**（PyMuPDF + python-docx）
+- ✅ **总结定制**（长度：极简/标准/详细，风格：要点式/段落式/问答式）
+- ✅ **导出功能**（Markdown/TXT/PDF/复制到剪贴板）
 
 ## 快速开始
 
@@ -106,11 +108,21 @@ powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
 - **URL 输入**: 输入网页链接，自动抓取正文
 - **文件上传**: 上传 PDF、Word、TXT、Markdown 文件（最大 10MB）
 
+**总结定制**：
+- **长度**: 极简(50字) / 标准(200字) / 详细(500字)
+- **风格**: 要点式 / 段落式 / 问答式
+
 点击"生成总结"或"解析文件并生成总结"，等待 AI 处理完成。
 
-### 4. 查看历史
+### 4. 查看和导出
 
 右侧面板显示所有历史总结记录，点击可查看详情。
+
+在详情页可以：
+- **导出 Markdown**: 下载 .md 文件
+- **导出 PDF**: 下载 .pdf 文件
+- **导出文本**: 下载 .txt 文件
+- **复制到剪贴板**: 一键复制总结内容
 
 ## 项目结构
 
@@ -219,9 +231,14 @@ Headers: Authorization: Bearer <token>
 ```
 POST /api/v1/summaries
 Headers: Authorization: Bearer <token>
-Body: { "text": "...", "title": "标题", "config_id": 1 }
-或
-Body: { "url": "https://...", "title": "标题", "config_id": 1 }
+Body: {
+  "text": "...",           // 文本内容（与 url 二选一）
+  "url": "https://...",    // 网页链接（与 text 二选一）
+  "title": "标题",         // 可选
+  "config_id": 1,         // AI 配置 ID
+  "length": "standard",   // 长度: brief/standard/detailed
+  "style": "points"       // 风格: points/paragraph/qa
+}
 ```
 
 **获取总结列表**
@@ -233,6 +250,14 @@ Headers: Authorization: Bearer <token>
 **获取单个总结**
 ```
 GET /api/v1/summaries/:id
+Headers: Authorization: Bearer <token>
+```
+
+**导出总结**
+```
+GET /api/v1/summaries/:id/export?format=markdown
+GET /api/v1/summaries/:id/export?format=text
+GET /api/v1/summaries/:id/export?format=pdf
 Headers: Authorization: Bearer <token>
 ```
 

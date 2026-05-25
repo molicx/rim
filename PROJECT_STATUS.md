@@ -1,8 +1,8 @@
 # RIM 项目状态报告
 
-**更新日期**: 2026-05-22
-**当前版本**: v2.0.0-alpha
-**阶段**: 阶段2 - 文件上传与解析功能
+**更新日期**: 2026-05-23
+**当前版本**: v2.1.0-alpha
+**阶段**: 阶段2 完成，准备进入阶段3
 
 ---
 
@@ -12,13 +12,13 @@
 - **项目名称**: RIM (Reading Intelligence Manager)
 - **项目类型**: 文章与播客智能提炼总结工具
 - **技术架构**: Go + Python 微服务
-- **开发状态**: 阶段2 文件上传功能开发中
+- **开发状态**: 阶段2全部功能完成，准备进入阶段3
 
 ### 代码统计
-- **总文件数**: 40+ 个
-- **Go 代码**: 12 个文件 (约 30KB)
-- **Python 代码**: 10 个文件 (约 22KB)
-- **前端代码**: 10 个文件 (约 62KB)
+- **总文件数**: 42+ 个
+- **Go 代码**: 13 个文件 (约 35KB)
+- **Python 代码**: 11 个文件 (约 28KB)
+- **前端代码**: 10 个文件 (约 65KB)
 - **文档**: 12 个 MD 文件
 
 ---
@@ -58,7 +58,7 @@
    - 国内镜像源加速（apt/pip/npm）
    - 健康检查、日志管理
 
-### 阶段2: 文件上传与解析 ✅ (新增)
+### 阶段2: 文件支持与导出 ✅
 6. **文件上传功能**
    - 支持 PDF、Word(.docx)、TXT、Markdown
    - 拖拽上传界面
@@ -71,10 +71,26 @@
    - Word 解析（python-docx）
    - TXT/Markdown 解析（多编码支持）
 
-8. **API 端点**
-   - `POST /api/v1/files/upload` - 文件上传
-   - `POST /api/v1/files/summarize` - 文件总结
-   - `POST /api/v1/parse-file` - 文件解析（Python）
+8. **总结定制**
+   - 总结长度：极简(50字) / 标准(200字) / 详细(500字)
+   - 总结风格：要点式 / 段落式 / 问答式
+   - 前端选择器 + 后端参数传递 + Python prompt 动态生成
+
+9. **导出功能**
+   - Markdown 导出（.md 附件下载）
+   - 纯文本导出（.txt 附件下载）
+   - PDF 导出（调用 Python 生成）
+   - 复制到剪贴板（前端 Clipboard API）
+   - 前端导出下拉菜单
+
+10. **URL 提取器增强**
+    - 随机 User-Agent 轮换（5种浏览器）
+    - 完整浏览器请求头（Sec-Fetch-*、Referer）
+    - 智能编码检测（Content-Type → meta → apparent_encoding）
+    - 30+ 常见内容区域选择器
+    - 基于文本密度的智能内容提取算法
+    - JS 渲染页面检测与友好提示
+    - 文本清理（过滤噪音、空行、特殊字符）
 
 ---
 
@@ -87,6 +103,7 @@ Go 主服务 (Port 3000)
 ├── 数据库操作（GORM + PostgreSQL）
 ├── API 网关
 ├── 文件上传管理
+├── 导出服务（Markdown/TXT/PDF）
 └── 业务逻辑编排
 
 Python AI 服务 (Port 8000)
@@ -95,9 +112,10 @@ Python AI 服务 (Port 8000)
 │   ├── ClaudeAdapter
 │   ├── GeminiAdapter
 │   └── GenericOpenAIAdapter
-├── 文本总结
-├── URL 抓取
+├── 文本总结（支持 length/style 参数）
+├── URL 抓取（增强版，反爬虫）
 ├── 文件解析（PDF/Word/TXT）
+├── PDF 导出服务
 └── 异步任务（Celery）
 ```
 
@@ -118,7 +136,7 @@ summaries
 ├── provider, model
 └── created_at, updated_at
 
-files (新增)
+files
 ├── id, user_id, title, filename, file_path
 ├── file_size, file_type
 └── created_at, updated_at
@@ -129,11 +147,11 @@ files (新增)
 React 18 + TypeScript
 ├── Pages
 │   ├── Login/Register
-│   ├── Dashboard
-│   └── SummaryDetail
+│   ├── Dashboard（文本/URL/文件输入、总结定制）
+│   └── SummaryDetail（详情、导出、删除）
 ├── Components
-│   ├── ConfigModal
-│   └── FileUpload (新增)
+│   ├── ConfigModal（AI配置）
+│   └── FileUpload（文件上传）
 ├── Services
 │   └── API Client
 └── Store
@@ -155,15 +173,22 @@ React 18 + TypeScript
 - `DELETE /api/v1/ai-configs/:id` - 删除配置
 
 ### 总结
-- `POST /api/v1/summaries` - 创建总结（文本/URL）
+- `POST /api/v1/summaries` - 创建总结（支持 text/url/length/style）
 - `GET /api/v1/summaries` - 获取总结列表
 - `GET /api/v1/summaries/:id` - 获取总结详情
 - `DELETE /api/v1/summaries/:id` - 删除总结
+- `GET /api/v1/summaries/:id/export?format=markdown|text|pdf` - 导出总结
 
-### 文件（新增）
+### 文件
 - `POST /api/v1/files/upload` - 上传文件
 - `POST /api/v1/files/summarize` - 文件总结
 - `POST /api/v1/parse-file` - 文件解析（Python）
+
+### Python AI 服务
+- `POST /api/v1/summarize` - 文本总结（支持 length/style）
+- `POST /api/v1/extract` - URL 内容提取
+- `POST /api/v1/parse-file` - 文件解析
+- `POST /api/v1/export-pdf` - PDF 导出
 
 ---
 
@@ -198,44 +223,48 @@ React 18 + TypeScript
 - 共享 uploads 数据卷
 - 多阶段构建减小镜像体积
 
+### 6. 智能内容提取
+- 随机 User-Agent 轮换
+- 智能编码检测
+- 基于文本密度的内容识别
+- JS 渲染页面检测
+
 ---
 
 ## 🐛 已知问题
 
 ### 需要用户配置
 - ⚠️ AI API Key 需要用户自行配置
-- ⚠️ 某些 URL 可能无法抓取（反爬虫）
+- ⚠️ 某些 URL 可能无法抓取（JS 渲染页面、强反爬虫）
 
 ### 待优化
 - ⚠️ 单元测试覆盖不足
 - ⚠️ 缺少缓存机制
 - ⚠️ 未实现速率限制
+- ⚠️ PDF 导出依赖 weasyprint（可选）
 
 ---
 
 ## 📈 下一步计划
 
-### 阶段2 完善（当前）
-- [x] 文件上传功能
-- [x] PDF/Word/TXT 解析
-- [ ] 总结定制（长度/风格选择）
-- [ ] 导出功能（Markdown/PDF/文本）
-
-### 阶段3: 播客支持
-- [ ] 音频文件上传
+### 阶段3: 播客支持（下一个目标）
+- [ ] 音频文件上传（mp3, wav, m4a）
 - [ ] Whisper 语音转文字
 - [ ] 时间轴摘要
+- [ ] 音频播放器组件
+- [ ] Celery 异步任务处理
 
 ### 阶段4: 交叉分析
+- [ ] 批量上传/URL
 - [ ] 观点对比
 - [ ] 主题提取
-- [ ] 知识图谱
+- [ ] 项目管理
 
 ### 阶段5-8: 高级功能
-- [ ] 导出和分享
-- [ ] 知识管理
+- [ ] 知识管理（标签、搜索）
+- [ ] 分享与协作
 - [ ] 移动端和浏览器扩展
-- [ ] 协作和 API 开放
+- [ ] 开放 API
 
 ---
 
@@ -244,9 +273,9 @@ React 18 + TypeScript
 - ✅ 2026-04-28: 第一阶段 MVP 完成
 - ✅ 2026-05-06: 自定义模型支持完成
 - ✅ 2026-05-07: UI 美化与体验优化完成
-- ✅ 2026-05-22: 阶段2 文件上传功能开发完成
-- 🔄 进行中: 功能测试与修复
-- 📅 计划: 阶段2 导出功能
+- ✅ 2026-05-22: 阶段2 文件上传功能完成
+- ✅ 2026-05-23: 阶段2 全部功能完成（总结定制、导出、URL增强）
+- 📅 计划: 阶段3 播客支持开发
 
 ---
 
@@ -292,5 +321,5 @@ chore: 构建/工具
 ---
 
 **项目状态**: 🟢 活跃开发中
-**最后更新**: 2026-05-22
+**最后更新**: 2026-05-23
 **维护者**: molicx | AI 协作: opencode
