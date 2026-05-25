@@ -32,10 +32,10 @@ type UpdateAIConfigRequest struct {
 	IsDefault    *bool  `json:"is_default"`
 }
 
-// ASR 配置请求
+// ASR 配置请求 - 不同提供商使用不同字段，验证在 handler 中进行
 type CreateASRConfigRequest struct {
 	Provider      string `json:"provider" binding:"required"`
-	APIKey        string `json:"api_key" binding:"required"`
+	APIKey        string `json:"api_key"`
 	ApiSecret     string `json:"api_secret"`
 	AppID         string `json:"app_id"`
 	AccessKeyID   string `json:"access_key_id"`
@@ -220,14 +220,39 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 		return
 	}
 
-	// 加密敏感字段
-	encryptedKey, err := utils.Encrypt(req.APIKey, h.EncryptionKey)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+	// 根据提供商验证必填字段
+	switch req.Provider {
+	case "xunfei":
+		if req.APIKey == "" || req.ApiSecret == "" || req.AppID == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "讯飞配置需要 API Key、API Secret 和 App ID"})
+			return
+		}
+	case "aliyun":
+		if req.AccessKeyID == "" || req.AccessSecret == "" || req.AppKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "阿里云配置需要 Access Key ID、Access Key Secret 和 App Key"})
+			return
+		}
+	case "whisper":
+		if req.APIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Whisper 配置需要 API Key"})
+			return
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 ASR 提供商: " + req.Provider})
 		return
 	}
 
-	var encryptedSecret, encryptedAccessSecret string
+	// 加密敏感字段
+	var encryptedKey, encryptedSecret, encryptedAccessSecret string
+	var err error
+
+	if req.APIKey != "" {
+		encryptedKey, err = utils.Encrypt(req.APIKey, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+			return
+		}
+	}
 	if req.ApiSecret != "" {
 		encryptedSecret, err = utils.Encrypt(req.ApiSecret, h.EncryptionKey)
 		if err != nil {
