@@ -5,11 +5,11 @@ WORKDIR /app
 # 设置 npm 使用国内镜像源（淘宝 npmmirror）
 RUN npm config set registry https://registry.npmmirror.com
 
+# 先复制 package 文件并安装依赖（利用缓存层）
 COPY package*.json ./
-
-# 安装依赖，使用国内镜像加速
 RUN npm install --registry=https://registry.npmmirror.com
 
+# 复制应用代码
 COPY . .
 
 EXPOSE 5173
