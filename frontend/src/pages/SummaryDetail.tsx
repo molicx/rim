@@ -263,24 +263,19 @@ const SummaryDetail: React.FC = () => {
         </div>
 
         {/* 原文链接 */}
-        {summary.url && (
-          <div className="mb-6 p-4 bg-blue-50 border border-blue-100 rounded-xl">
-            <div className="flex items-center gap-2 text-sm text-blue-700">
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
-              </svg>
-              <span className="font-medium">原文链接</span>
+          {summary.source_url && (
+            <div className="mb-6">
+              <h2 className="text-sm font-semibold text-gray-700 mb-2">原文链接</h2>
+              <a
+                href={summary.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-blue-600 hover:underline break-all"
+              >
+                {summary.source_url}
+              </a>
             </div>
-            <a
-              href={summary.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-1 text-sm text-blue-600 hover:text-blue-800 hover:underline break-all line-clamp-2"
-            >
-              {summary.url}
-            </a>
-          </div>
-        )}
+          )}
 
         {/* 内容区域 */}
         {viewMode === 'text' ? (

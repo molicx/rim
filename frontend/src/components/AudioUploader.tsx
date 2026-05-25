@@ -18,7 +18,7 @@ const AudioUploader: React.FC<AudioUploaderProps> = ({ asrConfigs, onTranscripti
   const [task, setTask] = useState<TranscriptionTask | null>(null);
   const [error, setError] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // 获取默认 ASR 配置
   const defaultConfig = asrConfigs.find(c => c.is_default) || asrConfigs[0];

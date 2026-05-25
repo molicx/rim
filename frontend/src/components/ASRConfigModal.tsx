@@ -23,9 +23,10 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [appId, setAppId] = useState('');
-  const [accessKeyId, setAccessKeyId] = useState('');
-  const [accessKeySecret, setAccessKeySecret] = useState('');
-  const [appKey, setAppKey] = useState('');
+  const [_accessKeyId, setAccessKeyId] = useState('');
+  const [_accessKeySecret, setAccessKeySecret] = useState('');
+  const [_appKey, setAppKey] = useState('');
+  void _accessKeyId; void _accessKeySecret; void _appKey;
   const [region, setRegion] = useState('cn-shanghai');
   const [baseUrl, setBaseUrl] = useState('');
   const [isDefault, setIsDefault] = useState(false);

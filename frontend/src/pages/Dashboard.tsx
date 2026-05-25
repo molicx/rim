@@ -382,7 +382,7 @@ const Dashboard: React.FC = () => {
               </div>
             ) : (
               /* 文章总结区域 */
-            <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
               {/* 卡片标题 */}
               <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
                 <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
@@ -650,6 +650,7 @@ const Dashboard: React.FC = () => {
                 </form>
               </div>
             </div>
+            )}
           </div>
 
           {/* 右侧 - 历史记录 */}

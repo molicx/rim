@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import {
   ReactFlow,
   Background,
@@ -16,13 +16,6 @@ interface MindMapProps {
   title: string;
   summary: string;
   keyPoints: string[];
-}
-
-interface TreeNode {
-  id: string;
-  label: string;
-  level: number;
-  parentId?: string;
 }
 
 const MindMap: React.FC<MindMapProps> = ({ title, summary, keyPoints }) => {
@@ -156,8 +149,8 @@ const MindMap: React.FC<MindMapProps> = ({ title, summary, keyPoints }) => {
     return { nodes, edges };
   }, [title, summary, keyPoints]);
 
-  const [nodesState, setNodes, onNodesChange] = useNodesState(nodes);
-  const [edgesState, setEdges, onEdgesChange] = useEdgesState(edges);
+  const [nodesState, , onNodesChange] = useNodesState(nodes);
+  const [edgesState, , onEdgesChange] = useEdgesState(edges);
 
   return (
     <div className="w-full h-[500px] bg-gradient-to-br from-slate-50 to-blue-50 rounded-xl border border-slate-200 overflow-hidden">

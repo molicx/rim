@@ -21,7 +21,8 @@ const ConfigModal: React.FC<ConfigModalProps> = ({
 }) => {
   const [configType, setConfigType] = useState<'preset' | 'custom'>('preset');
   const [provider, setProvider] = useState('openai');
-  const [providerType, setProviderType] = useState('native');
+  const [_providerType, setProviderType] = useState('native');
+  void _providerType;
   const [model, setModel] = useState('gpt-4');
   const [baseUrl, setBaseUrl] = useState('');
   const [apiKey, setApiKey] = useState('');
