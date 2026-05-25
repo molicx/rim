@@ -1,6 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import api from '@/services/api';
-import { ASRConfig, ASRProvider } from '@/types';
+import { ASRConfig } from '@/types';
+
+// 硬编码支持的 ASR 提供商列表
+const SUPPORTED_PROVIDERS: Record<string, { name: string; icon: string }> = {
+  xunfei: { name: '讯飞开放平台', icon: '🦊' },
+  aliyun: { name: '阿里云智能语音', icon: '☁️' },
+  whisper: { name: 'OpenAI Whisper', icon: '🤖' },
+};
 
 interface ASRConfigModalProps {
   isOpen: boolean;
@@ -23,60 +30,47 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
   const [apiKey, setApiKey] = useState('');
   const [apiSecret, setApiSecret] = useState('');
   const [appId, setAppId] = useState('');
-  const [_accessKeyId, setAccessKeyId] = useState('');
-  const [_accessKeySecret, setAccessKeySecret] = useState('');
-  const [_appKey, setAppKey] = useState('');
-  void _accessKeyId; void _accessKeySecret; void _appKey;
   const [region, setRegion] = useState('cn-shanghai');
   const [baseUrl, setBaseUrl] = useState('');
   const [isDefault, setIsDefault] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
-  const [providers, setProviders] = useState<Record<string, ASRProvider>>({});
 
   const isEditMode = !!editingConfig;
 
-  useEffect(() => {
-    loadProviders();
-  }, []);
-
-  useEffect(() => {
-    if (editingConfig) {
-      setProvider(editingConfig.provider);
-      setAppId(editingConfig.app_id || '');
-      setBaseUrl(editingConfig.base_url || '');
-      setRegion(editingConfig.region || 'cn-shanghai');
-      setIsDefault(editingConfig.is_default);
-      setApiKey('');
-      setApiSecret('');
-      setAccessKeyId('');
-      setAccessKeySecret('');
-      setAppKey('');
-    } else {
-      setProvider('xunfei');
-      setApiKey('');
-      setApiSecret('');
-      setAppId('');
-      setAccessKeyId('');
-      setAccessKeySecret('');
-      setAppKey('');
-      setRegion('cn-shanghai');
-      setBaseUrl('');
-      setIsDefault(false);
-    }
+  const resetForm = () => {
+    setProvider('xunfei');
+    setApiKey('');
+    setApiSecret('');
+    setAppId('');
+    setRegion('cn-shanghai');
+    setBaseUrl('');
+    setIsDefault(false);
     setError('');
     setShowApiKey(false);
-  }, [editingConfig, isOpen]);
-
-  const loadProviders = async () => {
-    try {
-      const response = await api.get('/asr/providers');
-      setProviders(response.data.info || {});
-    } catch (err) {
-      console.error('Failed to load ASR providers:', err);
-    }
   };
+
+  const loadEditingConfig = (config: ASRConfig) => {
+    setProvider(config.provider);
+    setAppId(config.app_id || '');
+    setBaseUrl(config.base_url || '');
+    setRegion(config.region || 'cn-shanghai');
+    setIsDefault(config.is_default);
+    setApiKey('');
+    setApiSecret('');
+  };
+
+  // 处理编辑模式
+  React.useEffect(() => {
+    if (isOpen) {
+      if (editingConfig) {
+        loadEditingConfig(editingConfig);
+      } else {
+        resetForm();
+      }
+    }
+  }, [editingConfig, isOpen]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -89,7 +83,6 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
         is_default: isDefault,
       };
 
-      // 根据提供商添加必要字段
       switch (provider) {
         case 'xunfei':
           if (!isEditMode && !apiKey) {
@@ -152,14 +145,8 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
     }
   };
 
-  const getProviderIcon = (providerName: string) => {
-    const info = providers[providerName];
-    return info?.icon || '🎙️';
-  };
-
-  const getProviderName = (providerName: string) => {
-    const info = providers[providerName];
-    return info?.name || providerName;
+  const getProviderInfo = (providerName: string) => {
+    return SUPPORTED_PROVIDERS[providerName] || { name: providerName, icon: '🎙️' };
   };
 
   if (!isOpen) return null;
@@ -199,33 +186,36 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
               </div>
             ) : (
               <div className="space-y-2">
-                {configs.map((config) => (
-                  <div key={config.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xl">{getProviderIcon(config.provider)}</span>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-medium text-slate-900 text-sm">{getProviderName(config.provider)}</span>
-                          {config.is_default && (
-                            <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">默认</span>
-                          )}
+                {configs.map((config) => {
+                  const info = getProviderInfo(config.provider);
+                  return (
+                    <div key={config.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                      <div className="flex items-center gap-3">
+                        <span className="text-xl">{info.icon}</span>
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-slate-900 text-sm">{info.name}</span>
+                            {config.is_default && (
+                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs font-medium">默认</span>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => onEditConfig?.(config)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                          </svg>
+                        </button>
+                        <button onClick={() => handleDelete(config.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <button onClick={() => onEditConfig?.(config)} className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                      </button>
-                      <button onClick={() => handleDelete(config.id)} className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
@@ -241,11 +231,11 @@ const ASRConfigModal: React.FC<ASRConfigModalProps> = ({
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* 提供商选择 */}
+              {/* 提供商选择 - 使用硬编码列表 */}
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-2">ASR 提供商</label>
                 <div className="grid grid-cols-3 gap-2">
-                  {Object.entries(providers).map(([key, info]) => (
+                  {Object.entries(SUPPORTED_PROVIDERS).map(([key, info]) => (
                     <button
                       key={key}
                       type="button"
