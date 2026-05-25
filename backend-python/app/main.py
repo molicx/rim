@@ -82,7 +82,7 @@ async def extract_text(request: ExtractRequest):
         if not result['text'] or len(result['text']) < 100:
             raise HTTPException(
                 status_code=400,
-                detail="提取的文本内容过短，可能是页面需要 JavaScript 渲染或内容被保护"
+                detail="提取的文本内容过短。可能原因：1) 页面需要登录 2) 页面使用 JavaScript 动态渲染 3) 网站有反爬虫机制。建议直接复制文本内容进行总结。"
             )
 
         logger.info(f"Successfully extracted {len(result['text'])} characters")
@@ -93,11 +93,24 @@ async def extract_text(request: ExtractRequest):
 
     except HTTPException:
         raise
+    except ValueError as e:
+        error_msg = str(e)
+        logger.error(f"Extraction failed for {request.url}: {error_msg}")
+
+        # 提供更友好的错误信息
+        if "JavaScript" in error_msg:
+            detail = "页面使用 JavaScript 动态渲染，无法直接提取。建议：1) 直接复制文本内容 2) 尝试其他网页"
+        elif "反爬虫" in error_msg or "Forbidden" in error_msg:
+            detail = "网站有反爬虫机制，无法直接访问。建议直接复制文本内容进行总结。"
+        else:
+            detail = f"内容提取失败：{error_msg}。建议直接复制文本内容进行总结。"
+
+        raise HTTPException(status_code=400, detail=detail)
     except Exception as e:
         logger.error(f"Extraction failed for {request.url}: {str(e)}")
         raise HTTPException(
             status_code=500,
-            detail=f"内容提取失败: {str(e)}"
+            detail=f"内容提取失败: {str(e)}。建议直接复制文本内容进行总结。"
         )
 
 
