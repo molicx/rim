@@ -380,16 +380,6 @@ const Dashboard: React.FC = () => {
                   </div>
                 )}
 
-                {inputMode === 'file' ? (
-                  <button
-                    type="button"
-                    onClick={handleFileSummarize}
-                    disabled={loading || !uploadedFileId || configs.length === 0}
-                    className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
-                  >
-                    {loading ? '解析并生成总结中...' : '解析文件并生成总结'}
-                  </button>
-                ) : (
                 <div className="border-t pt-4 space-y-3">
                   <label className="block text-sm font-medium text-gray-700">总结定制</label>
 
@@ -459,12 +449,6 @@ const Dashboard: React.FC = () => {
                   >
                     {loading ? '生成中...' : '生成总结'}
                   </button>
-                )}
-
-                {configs.length === 0 && (
-                  <p className="text-sm text-red-500 text-center">
-                    请先配置 AI 模型
-                  </p>
                 )}
 
                 {configs.length === 0 && (
