@@ -26,6 +26,38 @@ const SummaryDetail: React.FC = () => {
     }
   };
 
+  const handleExport = async (format: string) => {
+    try {
+      const response = await api.get(`/summaries/${id}/export?format=${format}`, {
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([response.data]);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      const ext = format === 'markdown' ? 'md' : format;
+      link.download = `${summary.title}.${ext}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('导出失败');
+    }
+  };
+
+  const handleCopy = async () => {
+    const content = `${summary.title}\n\n【总结】\n${summary.summary}\n\n【关键要点】\n${summary.key_points.map((p, i) => `${i + 1}. ${p}`).join('\n')}`;
+    try {
+      await navigator.clipboard.writeText(content);
+      alert('已复制到剪贴板');
+    } catch (err) {
+      alert('复制失败');
+    }
+  };
+
   const handleDelete = async () => {
     if (!confirm('确定要删除这条总结吗？')) return;
 
@@ -77,16 +109,53 @@ const SummaryDetail: React.FC = () => {
             </svg>
             返回
           </button>
-          <button
-            onClick={handleDelete}
-            className="flex items-center text-red-600 hover:text-red-700"
-          >
-            <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            删除
-          </button>
-        </div>
+           <div className="flex items-center gap-2">
+             <div className="relative group">
+               <button className="flex items-center text-gray-600 hover:text-blue-600">
+                 <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                 </svg>
+                 导出
+               </button>
+               <div className="absolute right-0 top-full mt-1 bg-white border rounded-lg shadow-lg py-1 hidden group-hover:block z-10">
+                 <button
+                   onClick={() => handleExport('markdown')}
+                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                 >
+                   Markdown (.md)
+                 </button>
+                 <button
+                   onClick={() => handleExport('text')}
+                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                 >
+                   纯文本 (.txt)
+                 </button>
+                 <button
+                   onClick={() => handleExport('pdf')}
+                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                 >
+                   PDF (.pdf)
+                 </button>
+                 <hr className="my-1" />
+                 <button
+                   onClick={handleCopy}
+                   className="block w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-100"
+                 >
+                   复制到剪贴板
+                 </button>
+               </div>
+             </div>
+             <button
+               onClick={handleDelete}
+               className="flex items-center text-red-600 hover:text-red-700"
+             >
+               <svg className="w-5 h-5 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+               </svg>
+               删除
+             </button>
+           </div>
+         </div>
 
         <div className="bg-white rounded-lg shadow-md p-6">
           <div className="border-b pb-4 mb-6">

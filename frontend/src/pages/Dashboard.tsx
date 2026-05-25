@@ -20,6 +20,8 @@ const Dashboard: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadedFileId, setUploadedFileId] = useState<number | null>(null);
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [summaryLength, setSummaryLength] = useState<'brief' | 'standard' | 'detailed'>('standard');
+  const [summaryStyle, setSummaryStyle] = useState<'points' | 'paragraph' | 'qa'>('points');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
@@ -153,6 +155,8 @@ const Dashboard: React.FC = () => {
       const payload: any = {
         title: title || '未命名总结',
         config_id: selectedConfig || undefined,
+        length: summaryLength,
+        style: summaryStyle,
       };
 
       if (inputMode === 'text') {
@@ -386,6 +390,68 @@ const Dashboard: React.FC = () => {
                     {loading ? '解析并生成总结中...' : '解析文件并生成总结'}
                   </button>
                 ) : (
+                <div className="border-t pt-4 space-y-3">
+                  <label className="block text-sm font-medium text-gray-700">总结定制</label>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">长度</label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'brief', label: '极简' },
+                        { value: 'standard', label: '标准' },
+                        { value: 'detailed', label: '详细' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setSummaryLength(opt.value as any)}
+                          className={`flex-1 py-1.5 text-xs rounded ${
+                            summaryLength === opt.value
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">风格</label>
+                    <div className="flex gap-2">
+                      {[
+                        { value: 'points', label: '要点式' },
+                        { value: 'paragraph', label: '段落式' },
+                        { value: 'qa', label: '问答式' },
+                      ].map(opt => (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => setSummaryStyle(opt.value as any)}
+                          className={`flex-1 py-1.5 text-xs rounded ${
+                            summaryStyle === opt.value
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {inputMode === 'file' ? (
+                  <button
+                    type="button"
+                    onClick={handleFileSummarize}
+                    disabled={loading || !uploadedFileId || configs.length === 0}
+                    className="w-full py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 disabled:opacity-50"
+                  >
+                    {loading ? '解析并生成总结中...' : '解析文件并生成总结'}
+                  </button>
+                ) : (
                   <button
                     type="submit"
                     disabled={loading || configs.length === 0}
@@ -393,6 +459,12 @@ const Dashboard: React.FC = () => {
                   >
                     {loading ? '生成中...' : '生成总结'}
                   </button>
+                )}
+
+                {configs.length === 0 && (
+                  <p className="text-sm text-red-500 text-center">
+                    请先配置 AI 模型
+                  </p>
                 )}
 
                 {configs.length === 0 && (

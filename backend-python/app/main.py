@@ -7,6 +7,7 @@ import logging
 from app.adapters.factory import create_adapter
 from app.utils import URLExtractor
 from app.services.file_parser import parse_file
+from app.services.pdf_export import generate_pdf
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ class SummarizeRequest(BaseModel):
     api_key: str
     provider_type: Optional[str] = "native"
     base_url: Optional[str] = None
+    length: Optional[str] = "standard"   # brief, standard, detailed
+    style: Optional[str] = "points"      # points, paragraph, qa
 
 
 class ExtractRequest(BaseModel):
@@ -57,7 +60,11 @@ async def summarize(request: SummarizeRequest):
             request.provider_type,
             request.base_url
         )
-        result = await adapter.summarize(request.text)
+        options = {
+            'length': request.length or 'standard',
+            'style': request.style or 'points',
+        }
+        result = await adapter.summarize(request.text, options)
         return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -120,6 +127,34 @@ async def parse_file_endpoint(request: ParseFileRequest):
             status_code=500,
             detail=f"文件解析失败: {str(e)}"
         )
+
+
+class ExportPDFRequest(BaseModel):
+    title: str
+    summary: str
+    key_points: list = []
+    provider: str = ""
+    model: str = ""
+    created_at: str = ""
+    source_url: str = ""
+
+
+@app.post("/api/v1/export-pdf")
+async def export_pdf(request: ExportPDFRequest):
+    """导出 PDF"""
+    try:
+        pdf_bytes = generate_pdf(request.dict())
+        from fastapi.responses import Response
+        return Response(
+            content=pdf_bytes,
+            media_type="application/pdf",
+            headers={
+                "Content-Disposition": f'attachment; filename="{request.title}.pdf"'
+            }
+        )
+    except Exception as e:
+        logger.error(f"PDF export failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"PDF 生成失败: {str(e)}")
 
 
 if __name__ == "__main__":

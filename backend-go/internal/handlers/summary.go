@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/rim/backend-go/internal/models"
@@ -24,6 +25,8 @@ type CreateSummaryRequest struct {
 	URL        string `json:"url"`
 	ConfigID   uint   `json:"config_id"`
 	Title      string `json:"title"`
+	Length     string `json:"length,omitempty"` // brief, standard, detailed
+	Style      string `json:"style,omitempty"`  // points, paragraph, qa
 }
 
 type PythonAIRequest struct {
@@ -33,6 +36,8 @@ type PythonAIRequest struct {
 	APIKey       string `json:"api_key"`
 	ProviderType string `json:"provider_type,omitempty"`
 	BaseURL      string `json:"base_url,omitempty"`
+	Length       string `json:"length,omitempty"`
+	Style        string `json:"style,omitempty"`
 }
 
 type PythonAIResponse struct {
@@ -92,14 +97,16 @@ func (h *SummaryHandler) CreateSummary(c *gin.Context) {
 		return
 	}
 
-	aiReq := PythonAIRequest{
-		Text:         text,
-		Provider:     config.Provider,
-		Model:        config.Model,
-		APIKey:       decryptedKey,
-		ProviderType: config.ProviderType,
-		BaseURL:      config.BaseURL,
-	}
+  aiReq := PythonAIRequest{
+    Text:         text,
+    Provider:     config.Provider,
+    Model:        config.Model,
+    APIKey:       decryptedKey,
+    ProviderType: config.ProviderType,
+    BaseURL:      config.BaseURL,
+    Length:       req.Length,
+    Style:        req.Style,
+  }
 
 	aiResp, err := h.callPythonAI(aiReq)
 	if err != nil {
@@ -258,4 +265,121 @@ func (h *SummaryHandler) extractTextFromURL(url string) (string, string, error) 
 	}
 
 	return result.Text, result.Title, nil
+}
+
+func (h *SummaryHandler) ExportSummary(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	summaryID := c.Param("id")
+	exportFormat := c.DefaultQuery("format", "markdown")
+
+	var summary models.Summary
+	if err := h.DB.Where("id = ? AND user_id = ?", summaryID, userID).First(&summary).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "总结不存在"})
+		return
+	}
+
+	var keyPoints []string
+	json.Unmarshal([]byte(summary.KeyPoints), &keyPoints)
+
+	switch exportFormat {
+	case "markdown":
+		c.Header("Content-Type", "text/markdown; charset=utf-8")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.md\"", summary.Title))
+		content := h.buildMarkdown(summary, keyPoints)
+		c.String(http.StatusOK, content)
+
+	case "text":
+		c.Header("Content-Type", "text/plain; charset=utf-8")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.txt\"", summary.Title))
+		content := h.buildText(summary, keyPoints)
+		c.String(http.StatusOK, content)
+
+	case "pdf":
+		c.Header("Content-Type", "application/pdf")
+		c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", summary.Title))
+		pdfBytes, err := h.buildPDF(summary, keyPoints)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "PDF 生成失败"})
+			return
+		}
+		c.Data(http.StatusOK, "application/pdf", pdfBytes)
+
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的导出格式"})
+	}
+}
+
+func (h *SummaryHandler) buildMarkdown(summary models.Summary, keyPoints []string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("# %s\n\n", summary.Title))
+	sb.WriteString(fmt.Sprintf("> 生成时间: %s\n", summary.CreatedAt.Format("2006-01-02 15:04")))
+	sb.WriteString(fmt.Sprintf("> 模型: %s - %s\n\n", summary.Provider, summary.Model))
+
+	sb.WriteString("## 总结\n\n")
+	sb.WriteString(summary.SummaryText)
+	sb.WriteString("\n\n")
+
+	if len(keyPoints) > 0 {
+		sb.WriteString("## 关键要点\n\n")
+		for i, point := range keyPoints {
+			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, point))
+		}
+		sb.WriteString("\n")
+	}
+
+	if summary.SourceURL != "" {
+		sb.WriteString(fmt.Sprintf("## 原文链接\n\n%s\n", summary.SourceURL))
+	}
+
+	return sb.String()
+}
+
+func (h *SummaryHandler) buildText(summary models.Summary, keyPoints []string) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("%s\n", summary.Title))
+	sb.WriteString(strings.Repeat("=", 40) + "\n\n")
+	sb.WriteString(fmt.Sprintf("生成时间: %s\n", summary.CreatedAt.Format("2006-01-02 15:04")))
+	sb.WriteString(fmt.Sprintf("模型: %s - %s\n\n", summary.Provider, summary.Model))
+
+	sb.WriteString("【总结】\n\n")
+	sb.WriteString(summary.SummaryText)
+	sb.WriteString("\n\n")
+
+	if len(keyPoints) > 0 {
+		sb.WriteString("【关键要点】\n\n")
+		for i, point := range keyPoints {
+			sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, point))
+		}
+		sb.WriteString("\n")
+	}
+
+	if summary.SourceURL != "" {
+		sb.WriteString(fmt.Sprintf("【原文链接】\n\n%s\n", summary.SourceURL))
+	}
+
+	return sb.String()
+}
+
+func (h *SummaryHandler) buildPDF(summary models.Summary, keyPoints []string) ([]byte, error) {
+	jsonData, _ := json.Marshal(map[string]interface{}{
+		"title":      summary.Title,
+		"summary":    summary.SummaryText,
+		"key_points": keyPoints,
+		"provider":   summary.Provider,
+		"model":      summary.Model,
+		"created_at": summary.CreatedAt.Format("2006-01-02 15:04"),
+		"source_url": summary.SourceURL,
+	})
+
+	resp, err := http.Post(h.PythonAIURL+"/api/v1/export-pdf", "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("PDF 生成服务返回错误")
+	}
+
+	return io.ReadAll(resp.Body)
 }

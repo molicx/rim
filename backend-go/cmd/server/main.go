@@ -95,6 +95,7 @@ func main() {
 			protected.GET("/summaries", summaryHandler.ListSummaries)
 			protected.GET("/summaries/:id", summaryHandler.GetSummary)
 			protected.DELETE("/summaries/:id", summaryHandler.DeleteSummary)
+			protected.GET("/summaries/:id/export", summaryHandler.ExportSummary)
 
 			protected.POST("/files/upload", fileHandler.UploadFile)
 			protected.POST("/files/summarize", fileHandler.SummarizeFile)

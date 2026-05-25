@@ -1,6 +1,7 @@
 from typing import Dict, List
 from openai import AsyncOpenAI
 from .base import AIModelAdapter
+from .prompts import build_summarize_prompt, get_max_tokens
 
 
 class GenericOpenAIAdapter(AIModelAdapter):
@@ -14,13 +15,12 @@ class GenericOpenAIAdapter(AIModelAdapter):
             self.client = AsyncOpenAI(api_key=api_key)
 
     async def summarize(self, text: str, options: Dict = None) -> Dict:
-        prompt = f"""请对以下文本进行总结，提取核心观点和要点：
+        options = options or {}
+        length = options.get('length', 'standard')
+        style = options.get('style', 'points')
 
-{text}
-
-请按以下格式输出：
-1. 一段简洁的总结（100-200字）
-2. 3-5个关键要点（每个要点一行）"""
+        prompt = build_summarize_prompt(text, length, style)
+        max_tokens = get_max_tokens(length)
 
         response = await self.client.chat.completions.create(
             model=self.model,
@@ -29,7 +29,7 @@ class GenericOpenAIAdapter(AIModelAdapter):
                 {"role": "user", "content": prompt}
             ],
             temperature=0.7,
-            max_tokens=1000
+            max_tokens=max_tokens
         )
 
         content = response.choices[0].message.content

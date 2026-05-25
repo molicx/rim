@@ -1,6 +1,7 @@
 from typing import Dict, List
 from anthropic import AsyncAnthropic
 from .base import AIModelAdapter
+from .prompts import build_summarize_prompt, get_max_tokens
 
 
 class ClaudeAdapter(AIModelAdapter):
@@ -9,17 +10,16 @@ class ClaudeAdapter(AIModelAdapter):
         self.model = model
 
     async def summarize(self, text: str, options: Dict = None) -> Dict:
-        prompt = f"""请对以下文本进行总结，提取核心观点和要点：
+        options = options or {}
+        length = options.get('length', 'standard')
+        style = options.get('style', 'points')
 
-{text}
-
-请按以下格式输出：
-1. 一段简洁的总结（100-200字）
-2. 3-5个关键要点（每个要点一行）"""
+        prompt = build_summarize_prompt(text, length, style)
+        max_tokens = get_max_tokens(length)
 
         response = await self.client.messages.create(
             model=self.model,
-            max_tokens=1000,
+            max_tokens=max_tokens,
             temperature=0.7,
             messages=[
                 {"role": "user", "content": prompt}
