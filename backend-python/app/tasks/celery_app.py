@@ -29,7 +29,8 @@ celery_app.conf.update(
     worker_max_tasks_per_child=50,  # 每个 worker 处理 50 个任务后重启
 )
 
-# 任务路由配置（可选）
+# 任务路由配置
 celery_app.conf.task_routes = {
     "app.tasks.ai_tasks.*": {"queue": "ai_tasks"},
+    "app.tasks.audio_tasks.*": {"queue": "ai_tasks"},
 }

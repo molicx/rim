@@ -134,6 +134,9 @@ func main() {
 		c.JSON(200, gin.H{"status": "ok"})
 	})
 
+	// 内部回调接口（Python Celery 任务完成回调）
+	r.POST("/internal/transcription-callback", audioHandler.TranscriptionCallback)
+
 	log.Printf("Server starting on port %s", cfg.ServerPort)
 	if err := r.Run(":" + cfg.ServerPort); err != nil {
 		log.Fatal("Failed to start server:", err)

@@ -263,7 +263,7 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	// 提交到 Celery 异步处理
-	go h.submitTranscriptionTask(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
+	h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
 
 	c.JSON(http.StatusAccepted, TranscriptionTaskResponse{
 		TaskID:  fmt.Sprintf("%d", task.ID),
@@ -308,21 +308,13 @@ func (h *AudioHandler) ListTranscriptionTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, tasks)
 }
 
-// submitTranscriptionTask 提交转写任务到 Python 服务
-func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider string, apiKey string, apiSecret string, config models.ASRConfig) {
-	// 调用 Python 服务进行转写
-	type TranscribeRequest struct {
-		TaskID   uint                   `json:"task_id"`
-		Audio    string                 `json:"audio_path"`
-		Provider string                `json:"provider"`
-		Config   map[string]interface{} `json:"config"`
-	}
-
+// submitTranscriptionTaskToCelery 提交转写任务到 Celery 队列
+func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, provider string, apiKey string, apiSecret string, config models.ASRConfig) {
+	// 构建配置
 	providerConfig := map[string]interface{}{
 		"api_key": apiKey,
 	}
 
-	// 根据提供商添加额外配置
 	switch provider {
 	case "xunfei":
 		if apiSecret != "" {
@@ -337,26 +329,35 @@ func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider 
 		providerConfig["app_key"] = config.AppKey
 	}
 
-	reqBody, _ := json.Marshal(TranscribeRequest{
-		TaskID:   taskID,
+	// 通过 HTTP 调用 Python Celery 任务接口
+	type CeleryTaskRequest struct {
+		TaskID   int                    `json:"task_id"`
+		Audio    string                 `json:"audio_path"`
+		Provider string                 `json:"provider"`
+		Config   map[string]interface{} `json:"config"`
+	}
+
+	reqBody, _ := json.Marshal(CeleryTaskRequest{
+		TaskID:   int(taskID),
 		Audio:    audioPath,
 		Provider: provider,
 		Config:   providerConfig,
 	})
 
 	resp, err := http.Post(
-		h.PythonAIURL+"/api/v1/transcribe",
+		h.PythonAIURL+"/api/v1/transcribe-async",
 		"application/json",
 		bytes.NewBuffer(reqBody),
 	)
 	if err != nil {
-		// 更新任务状态为失败
+		log.Printf("Failed to submit celery task: %v", err)
 		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "failed")
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
+		log.Printf("Celery task submission failed with status: %d", resp.StatusCode)
 		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "failed")
 		return
 	}
@@ -440,4 +441,44 @@ func (h *AudioHandler) ProcessPodcastURL(c *gin.Context) {
 		Status:    "downloaded",
 		Message:   "音频下载成功，可以开始转写",
 	})
+}
+
+// TranscriptionCallback Python Celery 任务完成回调
+func (h *AudioHandler) TranscriptionCallback(c *gin.Context) {
+	type CallbackRequest struct {
+		TaskID   int    `json:"task_id"`
+		Status   string `json:"status"`
+		Result   string `json:"result"`
+		Segments string `json:"segments"`
+		Duration float64 `json:"duration"`
+		Error    string `json:"error"`
+	}
+
+	var req CallbackRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求"})
+		return
+	}
+
+	log.Printf("Transcription callback: task_id=%d, status=%s", req.TaskID, req.Status)
+
+	// 更新任务状态
+	updates := map[string]interface{}{
+		"status": req.Status,
+	}
+
+	if req.Status == "completed" {
+		updates["result"] = req.Result
+		updates["segments"] = req.Segments
+	} else if req.Status == "failed" {
+		updates["error"] = req.Error
+	}
+
+	if err := h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", req.TaskID).Updates(updates).Error; err != nil {
+		log.Printf("Failed to update transcription task: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "更新任务状态失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }

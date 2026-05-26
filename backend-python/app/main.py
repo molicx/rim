@@ -254,7 +254,80 @@ async def transcribe_audio(request: TranscribeAPIRequest):
         raise HTTPException(status_code=500, detail=f"转写失败: {str(e)}")
 
 
+# ==================== Celery 异步转写 API ====================
+
+class TranscribeAsyncRequest(BaseModel):
+    task_id: int
+    audio_path: str
+    provider: str
+    config: Dict[str, Any] = {}
+
+
+@app.post("/api/v1/transcribe-async")
+async def transcribe_async(request: TranscribeAsyncRequest):
+    """提交异步转写任务到 Celery"""
+    try:
+        from app.tasks.audio_tasks import transcribe_audio_task
+
+        # 提交 Celery 任务
+        task = transcribe_audio_task.delay(
+            request.task_id,
+            request.audio_path,
+            request.provider,
+            request.config,
+        )
+
+        return {
+            "task_id": request.task_id,
+            "celery_task_id": task.id,
+            "status": "processing",
+        }
+    except Exception as e:
+        logger.error(f"Failed to submit async transcription: {e}")
+        raise HTTPException(status_code=500, detail=f"提交转写任务失败: {str(e)}")
+
+
 # ==================== 播客链接处理 API ====================
+
+class TranscriptionCallbackRequest(BaseModel):
+    task_id: int
+    status: str
+    text: str = ""
+    segments: list = []
+    duration: float = 0
+    error: str = ""
+
+
+@app.post("/api/v1/transcription-callback")
+async def transcription_callback(request: TranscriptionCallbackRequest):
+    """Celery 任务完成回调，更新转写结果到数据库"""
+    import aiohttp
+    import json
+
+    # 调用 Go API 更新任务状态
+    go_api_url = os.getenv("GO_API_URL", "http://go-api:3000")
+    callback_data = {
+        "task_id": request.task_id,
+        "status": request.status,
+        "result": request.text,
+        "segments": json.dumps(request.segments) if request.segments else "",
+        "duration": request.duration,
+        "error": request.error,
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"{go_api_url}/internal/transcription-callback",
+                json=callback_data,
+            ) as resp:
+                if resp.status != 200:
+                    logger.error(f"Callback to Go API failed: {resp.status}")
+    except Exception as e:
+        logger.error(f"Callback error: {e}")
+
+    return {"status": "ok"}
+
 
 class ProcessPodcastRequest(BaseModel):
     url: str
