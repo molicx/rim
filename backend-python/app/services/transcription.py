@@ -3,12 +3,10 @@ ASR 转写服务
 统一管理语音识别任务
 """
 import os
-import uuid
+import logging
 from typing import Dict, Optional
 
-from . import ASRFactory, TranscriptionResult
-
-import logging
+from app.adapters.asr import ASRFactory, TranscriptionResult
 
 logger = logging.getLogger(__name__)
 
