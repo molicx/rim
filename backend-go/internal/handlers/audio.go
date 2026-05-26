@@ -195,9 +195,16 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	// 解密 API Key
+	if config.APIKey == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ASR 配置中 API Key 为空，请重新配置"})
+		return
+	}
+	log.Printf("Decrypting API key: config_id=%d, provider=%s, key_length=%d, encryption_key_length=%d",
+		config.ID, config.Provider, len(config.APIKey), len(h.EncryptionKey))
 	decryptedKey, err := utils.Decrypt(config.APIKey, h.EncryptionKey)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "API Key 解密失败"})
+		log.Printf("API Key decrypt error: %v (key_length=%d, enc_key_length=%d)", err, len(config.APIKey), len(h.EncryptionKey))
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "API Key 解密失败，请删除并重新添加 ASR 配置"})
 		return
 	}
 
