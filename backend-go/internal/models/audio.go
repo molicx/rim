@@ -14,7 +14,7 @@ type ASRConfig struct {
 	DeletedAt       gorm.DeletedAt `gorm:"index" json:"-"`
 	UserID          uint           `gorm:"not null;index" json:"user_id"`
 	Provider        string         `gorm:"not null" json:"provider"` // xunfei, aliyun, tencent, baidu, whisper
-	APIKey          string         `gorm:"not null" json:"-"`
+	APIKey          string         `json:"-"`
 	ApiSecret       string         `json:"-"` // 讯飞等需要
 	AppID           string         `json:"-"` // 讯飞/阿里云等需要
 	AccessKeyID     string         `json:"-"` // 阿里云等需要

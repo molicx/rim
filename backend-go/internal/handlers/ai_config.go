@@ -256,34 +256,43 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 		return
 	}
 
-	// 加密敏感字段
+	// 加密敏感字段 - 根据提供商类型分别处理
 	var encryptedKey, encryptedSecret, encryptedAccessSecret string
 	var err error
 
-	if req.APIKey != "" {
-		encryptedKey, err = utils.Encrypt(req.APIKey, h.EncryptionKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
-			return
+	switch req.Provider {
+	case "xunfei", "whisper":
+		// 讯飞/Whisper：加密 APIKey
+		if req.APIKey != "" {
+			encryptedKey, err = utils.Encrypt(req.APIKey, h.EncryptionKey)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API key"})
+				return
+			}
 		}
-	}
-	if req.ApiSecret != "" {
-		encryptedSecret, err = utils.Encrypt(req.ApiSecret, h.EncryptionKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API secret"})
-			return
+		if req.ApiSecret != "" {
+			encryptedSecret, err = utils.Encrypt(req.ApiSecret, h.EncryptionKey)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt API secret"})
+				return
+			}
 		}
-	}
-	if req.AccessSecret != "" {
-		encryptedAccessSecret, err = utils.Encrypt(req.AccessSecret, h.EncryptionKey)
-		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access secret"})
-			return
+	case "aliyun":
+		// 阿里云：加密 AccessKeyID 和 AccessSecret
+		if req.AccessKeyID != "" {
+			encryptedKey, err = utils.Encrypt(req.AccessKeyID, h.EncryptionKey)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access key"})
+				return
+			}
 		}
-	}
-
-	if req.IsDefault {
-		h.DB.Model(&models.ASRConfig{}).Where("user_id = ?", userID).Update("is_default", false)
+		if req.AccessSecret != "" {
+			encryptedAccessSecret, err = utils.Encrypt(req.AccessSecret, h.EncryptionKey)
+			if err != nil {
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access secret"})
+				return
+			}
+		}
 	}
 
 	config := models.ASRConfig{
@@ -298,6 +307,10 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 		Region:         req.Region,
 		BaseURL:        req.BaseURL,
 		IsDefault:      req.IsDefault,
+	}
+
+	if req.IsDefault {
+		h.DB.Model(&models.ASRConfig{}).Where("user_id = ?", userID).Update("is_default", false)
 	}
 
 	if err := h.DB.Create(&config).Error; err != nil {

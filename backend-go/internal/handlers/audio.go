@@ -194,17 +194,52 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 		}
 	}
 
-	// 解密 API Key
-	if config.APIKey == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ASR 配置中 API Key 为空，请重新配置"})
-		return
-	}
-	log.Printf("Decrypting API key: config_id=%d, provider=%s, key_length=%d, encryption_key_length=%d",
-		config.ID, config.Provider, len(config.APIKey), len(h.EncryptionKey))
-	decryptedKey, err := utils.Decrypt(config.APIKey, h.EncryptionKey)
-	if err != nil {
-		log.Printf("API Key decrypt error: %v (key_length=%d, enc_key_length=%d)", err, len(config.APIKey), len(h.EncryptionKey))
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "API Key 解密失败，请删除并重新添加 ASR 配置"})
+	// 根据提供商类型解密对应字段
+	var decryptedKey, decryptedSecret string
+	var err error
+	switch config.Provider {
+	case "xunfei", "whisper":
+		if config.APIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ASR 配置中 API Key 为空，请重新配置"})
+			return
+		}
+		log.Printf("Decrypting API key: config_id=%d, provider=%s, key_length=%d", config.ID, config.Provider, len(config.APIKey))
+		decryptedKey, err = utils.Decrypt(config.APIKey, h.EncryptionKey)
+		if err != nil {
+			log.Printf("API Key decrypt error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "API Key 解密失败，请删除并重新添加 ASR 配置"})
+			return
+		}
+		if config.ApiSecret != "" {
+			decryptedSecret, err = utils.Decrypt(config.ApiSecret, h.EncryptionKey)
+			if err != nil {
+				log.Printf("API Secret decrypt error: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "API Secret 解密失败，请删除并重新添加 ASR 配置"})
+				return
+			}
+		}
+	case "aliyun":
+		if config.APIKey == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "ASR 配置中 Access Key ID 为空，请重新配置"})
+			return
+		}
+		log.Printf("Decrypting Access Key: config_id=%d, provider=%s, key_length=%d", config.ID, config.Provider, len(config.APIKey))
+		decryptedKey, err = utils.Decrypt(config.APIKey, h.EncryptionKey)
+		if err != nil {
+			log.Printf("Access Key decrypt error: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Access Key 解密失败，请删除并重新添加 ASR 配置"})
+			return
+		}
+		if config.AccessSecret != "" {
+			decryptedSecret, err = utils.Decrypt(config.AccessSecret, h.EncryptionKey)
+			if err != nil {
+				log.Printf("Access Secret decrypt error: %v", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Access Secret 解密失败，请删除并重新添加 ASR 配置"})
+				return
+			}
+		}
+	default:
+		c.JSON(http.StatusBadRequest, gin.H{"error": "不支持的 ASR 提供商: " + config.Provider})
 		return
 	}
 
@@ -228,7 +263,7 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	// 提交到 Celery 异步处理
-	go h.submitTranscriptionTask(task.ID, audio.FilePath, req.Provider, decryptedKey, config)
+	go h.submitTranscriptionTask(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
 
 	c.JSON(http.StatusAccepted, TranscriptionTaskResponse{
 		TaskID:  fmt.Sprintf("%d", task.ID),
@@ -274,13 +309,13 @@ func (h *AudioHandler) ListTranscriptionTasks(c *gin.Context) {
 }
 
 // submitTranscriptionTask 提交转写任务到 Python 服务
-func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider string, apiKey string, config models.ASRConfig) {
+func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider string, apiKey string, apiSecret string, config models.ASRConfig) {
 	// 调用 Python 服务进行转写
 	type TranscribeRequest struct {
-		TaskID  uint                   `json:"task_id"`
-		Audio   string                 `json:"audio_path"`
+		TaskID   uint                   `json:"task_id"`
+		Audio    string                 `json:"audio_path"`
 		Provider string                `json:"provider"`
-		Config  map[string]interface{} `json:"config"`
+		Config   map[string]interface{} `json:"config"`
 	}
 
 	providerConfig := map[string]interface{}{
@@ -290,13 +325,13 @@ func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider 
 	// 根据提供商添加额外配置
 	switch provider {
 	case "xunfei":
-		if apiSecret, err := utils.Decrypt(config.ApiSecret, h.EncryptionKey); err == nil {
+		if apiSecret != "" {
 			providerConfig["api_secret"] = apiSecret
 		}
 		providerConfig["app_id"] = config.AppID
 	case "aliyun":
-		if accessSecret, err := utils.Decrypt(config.AccessSecret, h.EncryptionKey); err == nil {
-			providerConfig["access_key_secret"] = accessSecret
+		if apiSecret != "" {
+			providerConfig["access_key_secret"] = apiSecret
 		}
 		providerConfig["access_key_id"] = config.AccessKeyID
 		providerConfig["app_key"] = config.AppKey
