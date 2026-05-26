@@ -1,8 +1,8 @@
 # RIM 项目状态报告
 
-**更新日期**: 2026-05-23
-**当前版本**: v2.1.0-alpha
-**阶段**: 阶段2 完成，准备进入阶段3
+**更新日期**: 2026-05-26
+**当前版本**: v3.0.0-alpha
+**阶段**: 阶段3 - 播客支持开发中
 
 ---
 
@@ -12,13 +12,13 @@
 - **项目名称**: RIM (Reading Intelligence Manager)
 - **项目类型**: 文章与播客智能提炼总结工具
 - **技术架构**: Go + Python 微服务
-- **开发状态**: 阶段2全部功能完成，准备进入阶段3
+- **开发状态**: 阶段3 播客支持开发中
 
 ### 代码统计
-- **总文件数**: 42+ 个
-- **Go 代码**: 13 个文件 (约 35KB)
-- **Python 代码**: 11 个文件 (约 28KB)
-- **前端代码**: 10 个文件 (约 65KB)
+- **总文件数**: 50+ 个
+- **Go 代码**: 14 个文件 (约 40KB)
+- **Python 代码**: 13 个文件 (约 35KB)
+- **前端代码**: 12 个文件 (约 70KB)
 - **文档**: 12 个 MD 文件
 
 ---
@@ -92,6 +92,36 @@
     - JS 渲染页面检测与友好提示
     - 文本清理（过滤噪音、空行、特殊字符）
 
+11. **思维导图**
+    - 基于 react-flow 的思维导图组件
+    - 支持拖拽、缩放、小地图
+    - 总结详情页支持文本/思维导图视图切换
+
+### 阶段3: 播客支持 🚧 进行中
+12. **音频上传**
+    - 支持 mp3、mp4、wav、m4a、flac、ogg、aac
+    - 上传进度显示
+    - 文件大小限制（500MB）
+
+13. **播客链接支持** ✅ 新增
+    - 通用 URL：直接下载音频文件直链
+    - RSS 订阅：解析 RSS/Atom feed，获取最新一期音频
+    - 音频格式自动检测
+    - 文件大小验证
+
+14. **ASR 配置管理** ✅ 新增
+    - 支持讯飞、阿里云、OpenAI Whisper 多方案
+    - API Key 加密存储
+    - 默认配置设置
+    - 配置增删查改
+
+15. **语音转文字**
+    - Python ASR 适配器接口
+    - 讯飞 ASR 适配器
+    - 阿里云 ASR 适配器
+    - Whisper ASR 适配器（支持云端/本地）
+    - Celery 异步任务处理
+
 ---
 
 ## 🏗️ 技术架构
@@ -104,6 +134,8 @@ Go 主服务 (Port 3000)
 ├── API 网关
 ├── 文件上传管理
 ├── 导出服务（Markdown/TXT/PDF）
+├── 音频上传管理
+├── 播客链接处理
 └── 业务逻辑编排
 
 Python AI 服务 (Port 8000)
@@ -116,7 +148,17 @@ Python AI 服务 (Port 8000)
 ├── URL 抓取（增强版，反爬虫）
 ├── 文件解析（PDF/Word/TXT）
 ├── PDF 导出服务
+├── 播客链接解析（podcast.py）
+│   ├── 通用 URL 下载
+│   ├── RSS 订阅解析
+│   └── 音频格式转换
+├── ASR 适配器
+│   ├── XunfeiASR（讯飞）
+│   ├── AliyunASR（阿里云）
+│   └── WhisperASR（OpenAI）
 └── 异步任务（Celery）
+    ├── ai_tasks（总结/解析）
+    └── audio_tasks（音频转写）
 ```
 
 ### 数据库设计
@@ -130,6 +172,13 @@ ai_configs
 ├── model, base_url, api_key (encrypted)
 └── is_default, created_at, updated_at
 
+asr_configs (新增)
+├── id, user_id, provider
+├── api_key (encrypted), api_secret (encrypted)
+├── app_id, access_key_id, access_key_secret (encrypted)
+├── app_key, region, base_url
+└── is_default, created_at, updated_at
+
 summaries
 ├── id, user_id, title, source_type, source_url
 ├── original_text, summary_text, key_points
@@ -140,6 +189,17 @@ files
 ├── id, user_id, title, filename, file_path
 ├── file_size, file_type
 └── created_at, updated_at
+
+audios (新增)
+├── id, user_id, title, filename, file_path
+├── file_size, file_type, duration
+└── created_at, updated_at
+
+transcription_tasks (新增)
+├── id, user_id, audio_id, title, provider
+├── status (pending/processing/completed/failed)
+├── result, segments (JSON), error
+└── created_at, updated_at
 ```
 
 ### 前端架构
@@ -147,11 +207,20 @@ files
 React 18 + TypeScript
 ├── Pages
 │   ├── Login/Register
-│   ├── Dashboard（文本/URL/文件输入、总结定制）
-│   └── SummaryDetail（详情、导出、删除）
+│   ├── Dashboard
+│   │   ├── 文章总结 Tab（文本/URL/文件输入）
+│   │   ├── 音频转写 Tab（文件上传）
+│   │   └── 播客链接 Tab（URL/RSS 输入）
+│   └── SummaryDetail
+│       ├── 文本视图
+│       ├── 思维导图视图
+│       └── 导出功能
 ├── Components
-│   ├── ConfigModal（AI配置）
-│   └── FileUpload（文件上传）
+│   ├── ConfigModal（AI 配置）
+│   ├── ASRConfigModal（ASR 配置）
+│   ├── AudioUploader（音频上传）
+│   ├── PodcastLinkInput（播客链接）
+│   └── MindMap（思维导图）
 ├── Services
 │   └── API Client
 └── Store
@@ -172,6 +241,12 @@ React 18 + TypeScript
 - `PUT /api/v1/ai-configs/:id` - 更新配置
 - `DELETE /api/v1/ai-configs/:id` - 删除配置
 
+### ASR 配置
+- `POST /api/v1/asr-configs` - 创建 ASR 配置
+- `GET /api/v1/asr-configs` - 获取 ASR 配置列表
+- `PUT /api/v1/asr-configs/:id` - 更新 ASR 配置
+- `DELETE /api/v1/asr-configs/:id` - 删除 ASR 配置
+
 ### 总结
 - `POST /api/v1/summaries` - 创建总结（支持 text/url/length/style）
 - `GET /api/v1/summaries` - 获取总结列表
@@ -184,11 +259,21 @@ React 18 + TypeScript
 - `POST /api/v1/files/summarize` - 文件总结
 - `POST /api/v1/parse-file` - 文件解析（Python）
 
+### 音频
+- `POST /api/v1/audio/upload` - 上传音频文件
+- `POST /api/v1/audio/transcribe` - 提交转写任务
+- `POST /api/v1/audio/podcast` - 处理播客链接
+- `GET /api/v1/audio/transcriptions` - 转写任务列表
+- `GET /api/v1/audio/transcriptions/:id` - 转写任务状态
+
 ### Python AI 服务
 - `POST /api/v1/summarize` - 文本总结（支持 length/style）
 - `POST /api/v1/extract` - URL 内容提取
 - `POST /api/v1/parse-file` - 文件解析
 - `POST /api/v1/export-pdf` - PDF 导出
+- `POST /api/v1/process-podcast` - 播客链接处理
+- `GET /api/v1/asr/providers` - ASR 提供商列表
+- `POST /api/v1/transcribe` - 音频转写
 
 ---
 
@@ -213,17 +298,29 @@ React 18 + TypeScript
 - 工厂模式创建
 - 易于扩展新模型
 
-### 4. 国内镜像加速
+### 4. 多方案 ASR 支持
+- 讯飞开放平台（中文识别准确率最高）
+- 阿里云智能语音（稳定可靠）
+- OpenAI Whisper（支持云端/本地）
+- 统一接口，可配置切换
+
+### 5. 播客链接支持
+- 通用 URL 直链下载
+- RSS 订阅自动解析
+- 音频格式自动检测
+- 大文件分块下载
+
+### 6. 国内镜像加速
 - apt: 阿里云镜像
 - pip: 清华镜像
 - npm: 淘宝 npmmirror 镜像
 
-### 5. Docker 优化
+### 7. Docker 优化
 - Python 镜像去掉 gcc 编译依赖
 - 共享 uploads 数据卷
 - 多阶段构建减小镜像体积
 
-### 6. 智能内容提取
+### 8. 智能内容提取
 - 随机 User-Agent 轮换
 - 智能编码检测
 - 基于文本密度的内容识别
@@ -235,6 +332,7 @@ React 18 + TypeScript
 
 ### 需要用户配置
 - ⚠️ AI API Key 需要用户自行配置
+- ⚠️ ASR API Key 需要用户自行配置
 - ⚠️ 某些 URL 可能无法抓取（JS 渲染页面、强反爬虫）
 
 ### 待优化
@@ -242,17 +340,21 @@ React 18 + TypeScript
 - ⚠️ 缺少缓存机制
 - ⚠️ 未实现速率限制
 - ⚠️ PDF 导出依赖 weasyprint（可选）
+- ⚠️ 音频播放器组件待开发
+- ⚠️ 转写结果展示页待开发
 
 ---
 
 ## 📈 下一步计划
 
-### 阶段3: 播客支持（下一个目标）
-- [ ] 音频文件上传（mp3, wav, m4a）
-- [ ] Whisper 语音转文字
-- [ ] 时间轴摘要
+### 阶段3: 播客支持（当前阶段）
+- [x] 音频文件上传
+- [x] 播客链接支持（通用 URL + RSS）
+- [x] ASR 配置管理（多方案）
+- [x] 语音转文字（ASR 适配器）
 - [ ] 音频播放器组件
-- [ ] Celery 异步任务处理
+- [ ] 转写结果展示页（时间轴摘要）
+- [ ] 转写进度追踪
 
 ### 阶段4: 交叉分析
 - [ ] 批量上传/URL
@@ -275,7 +377,8 @@ React 18 + TypeScript
 - ✅ 2026-05-07: UI 美化与体验优化完成
 - ✅ 2026-05-22: 阶段2 文件上传功能完成
 - ✅ 2026-05-23: 阶段2 全部功能完成（总结定制、导出、URL增强）
-- 📅 计划: 阶段3 播客支持开发
+- ✅ 2026-05-26: 阶段3 播客链接支持完成
+- 📅 计划: 阶段3 音频播放器和转写结果展示
 
 ---
 
@@ -321,5 +424,5 @@ chore: 构建/工具
 ---
 
 **项目状态**: 🟢 活跃开发中
-**最后更新**: 2026-05-23
+**最后更新**: 2026-05-26
 **维护者**: molicx | AI 协作: opencode
