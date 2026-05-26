@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import api from '@/services/api';
 import { ASRConfig, AudioFile, TranscriptionTask } from '@/types';
 
@@ -11,14 +11,54 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [, setSuccess] = useState('');
   const [downloadedAudio, setDownloadedAudio] = useState<AudioFile | null>(null);
   const [selectedProvider, setSelectedProvider] = useState('');
   const [transcribing, setTranscribing] = useState(false);
   const [task, setTask] = useState<TranscriptionTask | null>(null);
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // 获取默认 ASR 配置
   const defaultConfig = asrConfigs.find(c => c.is_default) || asrConfigs[0];
+
+  // 轮询任务状态
+  const pollTaskStatus = useCallback(async (taskId: number) => {
+    try {
+      const response = await api.get<TranscriptionTask>(`/audio/transcriptions/${taskId}`);
+      const updatedTask = response.data;
+      setTask(updatedTask);
+
+      // 如果任务完成或失败，停止轮询
+      if (updatedTask.status === 'completed' || updatedTask.status === 'failed') {
+        if (pollingRef.current) {
+          clearInterval(pollingRef.current);
+          pollingRef.current = null;
+        }
+        if (updatedTask.status === 'completed' && onTranscriptionComplete) {
+          onTranscriptionComplete(updatedTask);
+        }
+      }
+    } catch (err) {
+      console.error('Poll task status error:', err);
+    }
+  }, [onTranscriptionComplete]);
+
+  // 开始轮询
+  useEffect(() => {
+    if (task && (task.status === 'pending' || task.status === 'processing')) {
+      // 立即查询一次
+      pollTaskStatus(task.id);
+      // 每 3 秒轮询一次
+      pollingRef.current = setInterval(() => {
+        pollTaskStatus(task.id);
+      }, 3000);
+    }
+
+    return () => {
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+        pollingRef.current = null;
+      }
+    };
+  }, [task?.id, task?.status, pollTaskStatus]);
 
   const handleDownload = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,7 +69,6 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
 
     setLoading(true);
     setError('');
-    setSuccess('');
     setDownloadedAudio(null);
     setTask(null);
 
@@ -47,7 +86,6 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
       };
 
       setDownloadedAudio(audio);
-      setSuccess(`音频下载成功：${data.title}`);
       setUrl('');
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || err.message || '处理失败';
@@ -82,7 +120,7 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
       });
 
       const taskData = response.data;
-      setTask({
+      const newTask: TranscriptionTask = {
         id: parseInt(taskData.task_id),
         audio_id: downloadedAudio.id,
         title: downloadedAudio.title,
@@ -90,10 +128,11 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
         status: 'pending',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-      });
+      };
+      setTask(newTask);
 
       if (onTranscriptionComplete) {
-        onTranscriptionComplete(taskData);
+        onTranscriptionComplete(newTask);
       }
     } catch (err: any) {
       const errorMsg = err.response?.data?.error || err.message || '提交转写任务失败';
@@ -104,39 +143,127 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
   };
 
   const handleReset = () => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
     setUrl('');
     setError('');
-    setSuccess('');
     setDownloadedAudio(null);
     setTask(null);
   };
 
-  const urlExamples = [
-    { label: 'RSS 订阅', value: 'https://feed.xyzfm.space/xxxxx' },
-    { label: '直接音频', value: 'https://example.com/podcast/episode.mp3' },
-  ];
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'pending':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-50 text-amber-700 rounded-lg text-xs font-medium">
+            <span className="w-1.5 h-1.5 bg-amber-500 rounded-full animate-pulse" />
+            等待中
+          </span>
+        );
+      case 'processing':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium">
+            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse" />
+            转写中
+          </span>
+        );
+      case 'completed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium">
+            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full" />
+            已完成
+          </span>
+        );
+      case 'failed':
+        return (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-50 text-red-700 rounded-lg text-xs font-medium">
+            <span className="w-1.5 h-1.5 bg-red-500 rounded-full" />
+            失败
+          </span>
+        );
+      default:
+        return null;
+    }
+  };
 
-  // 转写中或已完成
+  // 转写任务进行中或已完成
   if (task) {
     return (
       <div className="space-y-4">
-        <div className="p-4 bg-emerald-50 border border-emerald-100 rounded-xl">
-          <div className="flex items-center gap-2 text-emerald-700 mb-2">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-            <span className="font-medium">转写任务已提交</span>
+        {/* 任务状态卡片 */}
+        <div className={`p-4 border rounded-xl ${
+          task.status === 'completed' ? 'bg-emerald-50 border-emerald-100' :
+          task.status === 'failed' ? 'bg-red-50 border-red-100' :
+          'bg-blue-50 border-blue-100'
+        }`}>
+          <div className="flex items-center justify-between mb-3">
+            <span className="font-medium text-slate-900">转写任务</span>
+            {getStatusBadge(task.status)}
           </div>
-          <p className="text-sm text-emerald-600">标题：{task.title}</p>
-          <p className="text-sm text-emerald-600">服务商：{task.provider}</p>
-          <p className="text-xs text-emerald-500 mt-2">转写完成后将自动生成总结</p>
+
+          <div className="space-y-2 text-sm">
+            <p className="text-slate-600">标题：{task.title}</p>
+            <p className="text-slate-600">服务商：{task.provider}</p>
+          </div>
+
+          {/* 进度条（处理中时显示） */}
+          {(task.status === 'pending' || task.status === 'processing') && (
+            <div className="mt-4">
+              <div className="bg-slate-200 rounded-full h-2 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${
+                    task.status === 'processing' ? 'bg-blue-500 w-2/3 animate-pulse' : 'bg-amber-500 w-1/3'
+                  }`}
+                />
+              </div>
+              <p className="text-xs text-slate-500 mt-2">
+                {task.status === 'pending' ? '等待处理...' : '正在转写音频...'}
+              </p>
+            </div>
+          )}
+
+          {/* 失败原因 */}
+          {task.status === 'failed' && task.error && (
+            <div className="mt-3 p-2 bg-red-100 rounded-lg">
+              <p className="text-xs text-red-700">{task.error}</p>
+            </div>
+          )}
+
+          {/* 转写结果 */}
+          {task.status === 'completed' && task.result && (
+            <div className="mt-4">
+              <h4 className="text-sm font-medium text-slate-700 mb-2">转写结果</h4>
+              <div className="p-3 bg-white rounded-lg border border-slate-200 max-h-40 overflow-y-auto">
+                <p className="text-sm text-slate-600 whitespace-pre-wrap">{task.result}</p>
+              </div>
+            </div>
+          )}
         </div>
-        <button
-          onClick={handleReset}
-          className="w-full py-2.5 px-4 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors"
-        >
-          处理新链接
-        </button>
+
+        {/* 操作按钮 */}
+        <div className="flex gap-2">
+          {(task.status === 'completed' || task.status === 'failed') && (
+            <button
+              onClick={handleReset}
+              className="flex-1 py-2.5 px-4 bg-slate-100 text-slate-700 rounded-xl font-medium hover:bg-slate-200 transition-colors"
+            >
+              {task.status === 'completed' ? '处理新链接' : '重试'}
+            </button>
+          )}
+          {task.status === 'completed' && (
+            <button
+              onClick={() => {
+                // TODO: 跳转到总结详情页
+                console.log('Navigate to summary detail');
+              }}
+              className="flex-1 py-2.5 px-4 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 transition-colors"
+            >
+              生成总结
+            </button>
+          )}
+        </div>
       </div>
     );
   }
@@ -238,16 +365,8 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
 
         <div className="flex flex-wrap gap-2">
           <span className="text-xs text-slate-500">示例：</span>
-          {urlExamples.map((example, index) => (
-            <button
-              key={index}
-              type="button"
-              onClick={() => setUrl(example.value)}
-              className="text-xs text-violet-600 hover:text-violet-800 hover:underline"
-            >
-              {example.label}
-            </button>
-          ))}
+          <button type="button" onClick={() => setUrl('https://feed.xyzfm.space/xxxxx')} className="text-xs text-violet-600 hover:text-violet-800 hover:underline">RSS 订阅</button>
+          <button type="button" onClick={() => setUrl('https://example.com/podcast/episode.mp3')} className="text-xs text-violet-600 hover:text-violet-800 hover:underline">直接音频</button>
         </div>
 
         {error && (

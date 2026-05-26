@@ -2,12 +2,11 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/services/api';
 import { useAuthStore } from '@/store/authStore';
-import { AIConfig, ASRConfig, Summary } from '@/types';
+import { AIConfig, ASRConfig, Summary, TranscriptionTask } from '@/types';
 import ConfigModal from '@/components/ConfigModal';
 import ASRConfigModal from '@/components/ASRConfigModal';
 import AudioUploader from '@/components/AudioUploader';
 import PodcastLinkInput from '@/components/PodcastLinkInput';
-import { TranscriptionTask } from '@/types';
 
 const Dashboard: React.FC = () => {
   const [configs, setConfigs] = useState<AIConfig[]>([]);
@@ -29,7 +28,9 @@ const Dashboard: React.FC = () => {
   const [showASRConfigModal, setShowASRConfigModal] = useState(false);
   const [editingASRConfig, setEditingASRConfig] = useState<ASRConfig | null>(null);
   const [asrConfigs, setAsrConfigs] = useState<ASRConfig[]>([]);
+  const [transcriptionTasks, setTranscriptionTasks] = useState<TranscriptionTask[]>([]);
   const [activeTab, setActiveTab] = useState<'text' | 'audio' | 'podcast'>('text');
+  const [rightPanelTab, setRightPanelTab] = useState<'summaries' | 'transcriptions'>('transcriptions');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
@@ -39,6 +40,7 @@ const Dashboard: React.FC = () => {
     loadConfigs();
     loadSummaries();
     loadASRConfigs();
+    loadTranscriptionTasks();
   }, []);
 
   const loadASRConfigs = async () => {
@@ -50,9 +52,18 @@ const Dashboard: React.FC = () => {
     }
   };
 
-  const handleTranscriptionComplete = (task: TranscriptionTask) => {
-    // 可以在这里添加转写完成后的处理，比如刷新总结列表
-    console.log('Transcription task submitted:', task);
+  const loadTranscriptionTasks = async () => {
+    try {
+      const response = await api.get<TranscriptionTask[]>('/audio/transcriptions');
+      setTranscriptionTasks(response.data);
+    } catch (err) {
+      console.error('Failed to load transcription tasks:', err);
+    }
+  };
+
+  const handleTranscriptionComplete = (_task?: TranscriptionTask) => {
+    // 刷新任务列表
+    loadTranscriptionTasks();
   };
 
   const loadConfigs = async () => {
@@ -718,75 +729,157 @@ const Dashboard: React.FC = () => {
             )}
           </div>
 
-          {/* 右侧 - 历史记录 */}
+          {/* 右侧 - 历史记录/转写任务 */}
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
-              <div className="px-5 py-4 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
-                <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
-                  <span className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-                    <svg className="w-4 h-4 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              {/* Tab 切换 */}
+              <div className="px-5 py-3 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setRightPanelTab('transcriptions')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      rightPanelTab === 'transcriptions'
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                     </svg>
-                  </span>
-                  历史记录
-                  {summaries.length > 0 && (
-                    <span className="ml-auto text-xs font-normal text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
-                      {summaries.length}
-                    </span>
-                  )}
-                </h2>
+                    转写任务
+                    {transcriptionTasks.length > 0 && (
+                      <span className="px-1.5 py-0.5 bg-violet-200 text-violet-800 rounded text-xs">
+                        {transcriptionTasks.length}
+                      </span>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => setRightPanelTab('summaries')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${
+                      rightPanelTab === 'summaries'
+                        ? 'bg-blue-100 text-blue-700'
+                        : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+                    }`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                    总结历史
+                    {summaries.length > 0 && (
+                      <span className="px-1.5 py-0.5 bg-blue-200 text-blue-800 rounded text-xs">
+                        {summaries.length}
+                      </span>
+                    )}
+                  </button>
+                </div>
               </div>
 
               <div className="p-4">
-                {summaries.length === 0 ? (
-                  <div className="text-center py-12">
-                    <div className="w-16 h-16 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
-                      <svg className="w-8 h-8 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                      </svg>
+                {rightPanelTab === 'transcriptions' ? (
+                  /* 转写任务列表 */
+                  transcriptionTasks.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-slate-500">暂无转写任务</p>
+                      <p className="text-xs text-slate-400 mt-1">上传音频或输入播客链接开始转写</p>
                     </div>
-                    <p className="text-sm text-slate-500">暂无历史记录</p>
-                    <p className="text-xs text-slate-400 mt-1">创建你的第一个总结吧</p>
-                  </div>
-                ) : (
-                  <div className="space-y-3 max-h-[600px] overflow-y-auto">
-                    {summaries.map((summary) => (
-                      <div
-                        key={summary.id}
-                        className="group p-4 bg-slate-50 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 hover:shadow-sm transition-all cursor-pointer"
-                        onClick={() => navigate(`/summary/${summary.id}`)}
-                      >
-                        <div className="flex items-start justify-between gap-2 mb-2">
-                          <h3 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
-                            {summary.title}
-                          </h3>
-                          <button
-                            onClick={(e) => handleDeleteSummary(summary.id, e)}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
-                            title="删除"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                            </svg>
-                          </button>
-                        </div>
-                        <p className="text-xs text-slate-500 mb-3 line-clamp-2">
-                          {summary.summary}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {getSourceIcon(summary.source_type)}
-                            <span className="text-xs text-slate-400">
-                              {getProviderIcon(summary.provider)} {summary.provider}
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                      {transcriptionTasks.map((task) => (
+                        <div
+                          key={task.id}
+                          className="p-3 bg-slate-50 rounded-xl border border-slate-100"
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <h4 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
+                              {task.title}
+                            </h4>
+                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                              task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                              task.status === 'failed' ? 'bg-red-100 text-red-700' :
+                              task.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                              'bg-amber-100 text-amber-700'
+                            }`}>
+                              {task.status === 'pending' ? '等待中' :
+                               task.status === 'processing' ? '转写中' :
+                               task.status === 'completed' ? '已完成' : '失败'}
                             </span>
                           </div>
-                          <span className="text-xs text-slate-400">
-                            {formatTime(summary.created_at)}
-                          </span>
+                          <div className="flex items-center justify-between text-xs text-slate-500">
+                            <span>{task.provider}</span>
+                            <span>{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+                          </div>
+                          {task.status === 'processing' && (
+                            <div className="mt-2">
+                              <div className="bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div className="bg-blue-500 h-full rounded-full w-2/3 animate-pulse" />
+                              </div>
+                            </div>
+                          )}
+                          {task.status === 'failed' && task.error && (
+                            <p className="mt-2 text-xs text-red-600">{task.error}</p>
+                          )}
+                          {task.status === 'completed' && task.result && (
+                            <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 max-h-20 overflow-y-auto">
+                              <p className="text-xs text-slate-600 line-clamp-3">{task.result}</p>
+                            </div>
+                          )}
                         </div>
+                      ))}
+                    </div>
+                  )
+                ) : (
+                  /* 总结历史列表 */
+                  summaries.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="w-12 h-12 bg-slate-100 rounded-xl flex items-center justify-center mx-auto mb-3">
+                        <svg className="w-6 h-6 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        </svg>
                       </div>
-                    ))}
-                  </div>
+                      <p className="text-sm text-slate-500">暂无总结记录</p>
+                      <p className="text-xs text-slate-400 mt-1">创建你的第一个总结吧</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                      {summaries.map((summary) => (
+                        <div
+                          key={summary.id}
+                          className="group p-3 bg-slate-50 hover:bg-white rounded-xl border border-transparent hover:border-slate-200 hover:shadow-sm transition-all cursor-pointer"
+                          onClick={() => navigate(`/summary/${summary.id}`)}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <h4 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
+                              {summary.title}
+                            </h4>
+                            <button
+                              onClick={(e) => handleDeleteSummary(summary.id, e)}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all"
+                              title="删除"
+                            >
+                              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                          <p className="text-xs text-slate-500 mb-2 line-clamp-2">{summary.summary}</p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-1.5">
+                              {getSourceIcon(summary.source_type)}
+                              <span className="text-xs text-slate-400">
+                                {getProviderIcon(summary.provider)} {summary.provider}
+                              </span>
+                            </div>
+                            <span className="text-xs text-slate-400">{formatTime(summary.created_at)}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )
                 )}
               </div>
             </div>
