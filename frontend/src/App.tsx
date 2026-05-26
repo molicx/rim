@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import SummaryDetail from './pages/SummaryDetail';
+import TranscriptionDetail from './pages/TranscriptionDetail';
 
 const queryClient = new QueryClient();
 
@@ -34,6 +35,14 @@ const App: React.FC = () => {
             element={
               <ProtectedRoute>
                 <SummaryDetail />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/transcription/:id"
+            element={
+              <ProtectedRoute>
+                <TranscriptionDetail />
               </ProtectedRoute>
             }
           />

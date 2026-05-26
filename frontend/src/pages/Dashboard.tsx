@@ -792,7 +792,8 @@ const Dashboard: React.FC = () => {
                       {transcriptionTasks.map((task) => (
                         <div
                           key={task.id}
-                          className="p-3 bg-slate-50 rounded-xl border border-slate-100"
+                          className="p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all cursor-pointer"
+                          onClick={() => navigate(`/transcription/${task.id}`)}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <h4 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
