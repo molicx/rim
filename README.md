@@ -1,83 +1,40 @@
 # RIM - 文章与播客智能提炼总结工具
 
-## 阶段3: 播客支持开发中 🚧
+> 基于 AI 的内容提炼工具，支持文章和播客的智能总结、观点提取和交叉分析。
 
-### 已实现功能
+## 功能特性
 
-- ✅ 用户注册/登录系统（JWT 认证）
-- ✅ AI 模型配置管理（支持 OpenAI/Claude/Gemini + 自定义模型）
-- ✅ 文本总结功能（直接粘贴）
-- ✅ URL 抓取功能（增强版，支持反爬虫）
-- ✅ 历史记录管理（查看/删除）
-- ✅ 前端界面（React + TypeScript，简约现代风格）
-- ✅ Docker 容器化部署（国内镜像加速）
-- ✅ **自定义模型支持**（DeepSeek/Qwen/Ollama 等 OpenAI 兼容接口）
-- ✅ **文件上传功能**（PDF/Word/TXT/Markdown，拖拽上传）
-- ✅ **文件解析服务**（PyMuPDF + python-docx）
-- ✅ **总结定制**（长度：极简/标准/详细，风格：要点式/段落式/问答式）
-- ✅ **导出功能**（Markdown/TXT/PDF/复制到剪贴板）
-- ✅ **思维导图**（react-flow，支持文本/思维导图视图切换）
-- ✅ **音频上传**（mp3/mp4/wav/m4a/flac/ogg/aac）
-- ✅ **播客链接**（通用 URL 直链 + RSS 订阅解析）
-- ✅ **多方案 ASR**（讯飞/阿里云/Whisper，可配置切换）
-- ✅ **语音转文字**（ASR 适配器 + Celery 异步任务）
+- ✅ **文章总结** - 文本粘贴 / URL 抓取 / 文件上传（PDF/Word/TXT/MD）
+- ✅ **AI 模型配置** - 支持 OpenAI/Claude/Gemini/DeepSeek/Qwen/Ollama 等
+- ✅ **总结定制** - 长度（极简/标准/详细）+ 风格（要点式/段落式/问答式）
+- ✅ **思维导图** - 基于 react-flow 的可视化展示
+- ✅ **导出功能** - Markdown / PDF / 纯文本 / 复制到剪贴板
+- ✅ **音频转写** - 上传音频或输入播客链接，自动转写为文字
+- ✅ **多方案 ASR** - 讯飞 / 阿里云 / OpenAI Whisper，可配置切换
+- ✅ **播客链接** - 通用 URL 直链 + RSS 订阅解析
+- ✅ **音频播放器** - 时间轴片段跳转、播放速度调节
 
 ## 快速开始
 
 ### 前置要求
 
 - Docker 和 Docker Compose
-- （可选）至少一个 AI 服务的 API Key（OpenAI/Claude/Gemini）
 
 ### 启动项目
 
-1. 克隆项目并进入目录
 ```bash
+# 1. 克隆项目
 cd rim
-```
 
-2. 复制环境变量文件
-```bash
+# 2. 复制环境变量文件
 cp .env.example .env
-```
 
-3. （可选）编辑 `.env` 文件，添加你的 AI API Key
-```bash
-# 可选：在这里配置默认的 API Key
-# 用户也可以在界面中配置自己的 Key
-OPENAI_API_KEY=your_openai_key
-ANTHROPIC_API_KEY=your_claude_key
-GOOGLE_API_KEY=your_gemini_key
-```
-
-4. 启动所有服务
-```bash
+# 3. 启动所有服务
 docker-compose up -d
-```
 
-5. 等待服务启动（约 30 秒）
-```bash
-docker-compose logs -f
-```
-
-6. 访问应用
-- 前端界面: http://localhost:5173
-- Go API: http://localhost:3000
-- Python AI 服务: http://localhost:8000
-
-### 验证功能
-
-运行验证脚本测试所有功能：
-
-**Linux/Mac:**
-```bash
-chmod +x scripts/validate.sh
-./scripts/validate.sh
-```
-
-**Windows PowerShell:**
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
+# 4. 访问应用
+# 前端: http://localhost:5173
+# API: http://localhost:3000
 ```
 
 ## 使用指南
@@ -88,266 +45,109 @@ powershell -ExecutionPolicy Bypass -File scripts\validate.ps1
 
 ### 2. 配置 AI 模型
 
-登录后，点击右上角"AI 配置"按钮：
-
-#### 预设模型
-- 选择 AI 提供商（OpenAI/Claude/Gemini）
-- 选择模型
-- 输入 API Key
-- 设置为默认配置
-
-#### 自定义模型（新功能）
-支持任何 OpenAI 兼容的 API 接口：
-- **DeepSeek**: deepseek-chat
-- **通义千问**: qwen-turbo
-- **Ollama**: 本地模型
-- **智谱 AI**: glm-4
-- 其他兼容接口
-
-详细配置指南参见 [docs/CUSTOM_MODELS.md](docs/CUSTOM_MODELS.md)
+点击右上角"AI 配置"按钮：
+- **预设模型**：OpenAI / Claude / Gemini
+- **自定义模型**：DeepSeek / Qwen / Ollama 等 OpenAI 兼容接口
 
 ### 3. 创建总结
 
-支持三种输入方式：
-- **文本输入**: 直接粘贴文章内容
-- **URL 输入**: 输入网页链接，自动抓取正文
-- **文件上传**: 上传 PDF、Word、TXT、Markdown 文件（最大 10MB）
+Dashboard 有三个 Tab：
+- **文章总结** - 文本 / URL / 文件输入
+- **音频转写** - 上传音频文件
+- **播客链接** - 输入 RSS 订阅或音频直链
 
-**总结定制**：
-- **长度**: 极简(50字) / 标准(200字) / 详细(500字)
-- **风格**: 要点式 / 段落式 / 问答式
+### 4. 查看历史
 
-点击"生成总结"或"解析文件并生成总结"，等待 AI 处理完成。
-
-### 4. 查看和导出
-
-右侧面板显示所有历史总结记录，点击可查看详情。
-
-在详情页可以：
-- **导出 Markdown**: 下载 .md 文件
-- **导出 PDF**: 下载 .pdf 文件
-- **导出文本**: 下载 .txt 文件
-- **复制到剪贴板**: 一键复制总结内容
+右侧面板显示：
+- **转写任务** - 所有音频转写任务及状态
+- **总结历史** - 所有已完成的总结
 
 ## 项目结构
 
 ```
 rim/
-├── backend-go/          # Go 主服务
+├── backend-go/          # Go 主服务 (Port 3000)
 │   ├── cmd/server/      # 主程序入口
-│   ├── internal/        # 内部包
-│   │   ├── models/      # 数据模型
-│   │   ├── handlers/    # HTTP 处理器
-│   │   ├── middleware/  # 中间件
-│   │   ├── config/      # 配置
-│   │   └── utils/       # 工具函数
-│   └── Dockerfile
-├── backend-python/      # Python AI 服务
+│   └── internal/        # handlers / models / middleware / utils
+├── backend-python/      # Python AI 服务 (Port 8000)
 │   ├── app/
-│   │   ├── adapters/    # AI 模型适配器
-│   │   ├── main.py      # FastAPI 应用
-│   │   └── ...
-│   ├── requirements.txt
-│   └── Dockerfile
-├── frontend/            # React 前端
+│   │   ├── adapters/    # AI 模型适配器 / ASR 适配器
+│   │   ├── services/    # 转写服务 / 播客解析 / 文件解析
+│   │   └── main.py      # FastAPI 应用
+│   └── requirements.txt
+├── frontend/            # React 前端 (Port 5173)
 │   ├── src/
-│   │   ├── pages/       # 页面组件
-│   │   ├── components/  # 通用组件
-│   │   ├── services/    # API 服务
-│   │   ├── store/       # 状态管理
-│   │   └── types/       # TypeScript 类型
-│   ├── package.json
-│   └── Dockerfile.dev
+│   │   ├── pages/       # Dashboard / SummaryDetail / TranscriptionDetail
+│   │   ├── components/  # AudioPlayer / MindMap / PodcastLinkInput / ...
+│   │   └── types/       # TypeScript 类型定义
+│   └── package.json
+├── docs/                # 文档
+│   └── CUSTOM_MODELS.md # 自定义模型配置指南
 ├── scripts/             # 工具脚本
-│   ├── validate.sh      # Linux/Mac 验证脚本
-│   └── validate.ps1     # Windows 验证脚本
 └── docker-compose.yml   # Docker 编排
 ```
 
 ## 技术栈
 
-### 后端
-- **Go**: Gin 框架, GORM, JWT 认证
-- **Python**: FastAPI, 多 AI 模型适配器
-- **数据库**: PostgreSQL
-- **缓存**: Redis
-
-### 前端
-- **框架**: React 18 + TypeScript
-- **构建**: Vite
-- **UI**: TailwindCSS
-- **状态**: Zustand
-
-### AI 模型
-- OpenAI GPT-4 / GPT-4o / GPT-3.5-turbo
-- Anthropic Claude 3.5 Sonnet / Claude 3 Opus
-- Google Gemini Pro
-- **自定义模型**: 支持任何 OpenAI 兼容接口（DeepSeek, Qwen, Ollama, 智谱 AI 等）
+| 组件 | 技术 |
+|------|------|
+| 后端 | Go (Gin) + Python (FastAPI) |
+| 前端 | React 18 + TypeScript + TailwindCSS |
+| 数据库 | PostgreSQL + Redis |
+| AI 模型 | OpenAI / Claude / Gemini / DeepSeek / Qwen / Whisper |
+| 部署 | Docker Compose |
 
 ## API 文档
 
-### 认证接口
+### 认证
+- `POST /api/v1/auth/register` - 注册
+- `POST /api/v1/auth/login` - 登录
 
-**注册**
-```
-POST /api/v1/auth/register
-Body: { "email": "user@example.com", "password": "password", "name": "Name" }
-```
+### 总结
+- `POST /api/v1/summaries` - 创建总结
+- `GET /api/v1/summaries` - 获取列表
+- `GET /api/v1/summaries/:id` - 获取详情
+- `GET /api/v1/summaries/:id/export?format=markdown|text|pdf` - 导出
 
-**登录**
-```
-POST /api/v1/auth/login
-Body: { "email": "user@example.com", "password": "password" }
-```
+### 音频
+- `POST /api/v1/audio/upload` - 上传音频
+- `POST /api/v1/audio/transcribe` - 提交转写任务
+- `POST /api/v1/audio/podcast` - 处理播客链接
+- `GET /api/v1/audio/transcriptions` - 转写任务列表
+- `GET /api/v1/audio/transcriptions/:id` - 任务状态
 
-### AI 配置接口
-
-**创建配置**
-```
-POST /api/v1/ai-configs
-Headers: Authorization: Bearer <token>
-Body: {
-  "provider": "openai",
-  "model": "gpt-4",
-  "api_key": "sk-...",
-  "is_default": true
-}
-
-# 自定义模型示例
-Body: {
-  "provider": "deepseek",
-  "provider_type": "openai_compatible",
-  "model": "deepseek-chat",
-  "base_url": "https://api.deepseek.com/v1",
-  "api_key": "sk-...",
-  "is_default": false
-}
-```
-
-**获取配置列表**
-```
-GET /api/v1/ai-configs
-Headers: Authorization: Bearer <token>
-```
-
-### 总结接口
-
-**创建总结**
-```
-POST /api/v1/summaries
-Headers: Authorization: Bearer <token>
-Body: {
-  "text": "...",           // 文本内容（与 url 二选一）
-  "url": "https://...",    // 网页链接（与 text 二选一）
-  "title": "标题",         // 可选
-  "config_id": 1,         // AI 配置 ID
-  "length": "standard",   // 长度: brief/standard/detailed
-  "style": "points"       // 风格: points/paragraph/qa
-}
-```
-
-**获取总结列表**
-```
-GET /api/v1/summaries
-Headers: Authorization: Bearer <token>
-```
-
-**获取单个总结**
-```
-GET /api/v1/summaries/:id
-Headers: Authorization: Bearer <token>
-```
-
-**导出总结**
-```
-GET /api/v1/summaries/:id/export?format=markdown
-GET /api/v1/summaries/:id/export?format=text
-GET /api/v1/summaries/:id/export?format=pdf
-Headers: Authorization: Bearer <token>
-```
-
-### 文件 API
-
-**上传文件**
-```
-POST /api/v1/files/upload
-Headers: Authorization: Bearer <token>
-Content-Type: multipart/form-data
-Body: file=<文件>, title=标题
-```
-
-**文件总结**
-```
-POST /api/v1/files/summarize
-Headers: Authorization: Bearer <token>
-Body: { "file_id": 1, "title": "标题", "config_id": 1 }
-```
-
-## 常见问题
-
-### 1. 服务启动失败
-
-检查端口是否被占用：
-- 3000 (Go API)
-- 5173 (前端)
-- 8000 (Python AI)
-- 5432 (PostgreSQL)
-- 6379 (Redis)
-
-### 2. AI 总结失败
-
-确保：
-- 已配置有效的 AI API Key
-- API Key 有足够的额度
-- 网络可以访问 AI 服务
-
-### 3. URL 抓取失败
-
-某些网站可能：
-- 需要登录
-- 有反爬虫机制
-- 使用 JavaScript 渲染内容
-
-建议直接复制文本内容进行总结。
+### 文件
+- `POST /api/v1/files/upload` - 上传文件
+- `POST /api/v1/files/summarize` - 文件总结
 
 ## 开发命令
 
-### 查看日志
 ```bash
+# 查看日志
 docker-compose logs -f [service-name]
-```
 
-### 重启服务
-```bash
+# 重启服务
 docker-compose restart [service-name]
-```
 
-### 停止所有服务
-```bash
+# 停止所有服务
 docker-compose down
+
+# 清理数据（重置数据库）
+docker-compose down -v && docker-compose up -d
 ```
 
-### 清理数据（重置数据库）
-```bash
-docker-compose down -v
-docker-compose up -d
-```
+## 项目状态
 
-## 下一步开发
+详见 [PROJECT_STATUS.md](PROJECT_STATUS.md)
 
-参见 `DEVELOPMENT_PLAN.md` 中的阶段 2-8 规划：
-- 阶段 2: 文件上传和解析
-- 阶段 3: 播客音频处理
-- 阶段 4: 多内容交叉分析
-- 阶段 5: 导出和分享
-- 阶段 6: 知识管理
-- 阶段 7: 移动端和浏览器扩展
-- 阶段 8: 高级功能
+## 开发计划
+
+详见 [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
+
+## 自定义模型配置
+
+详见 [docs/CUSTOM_MODELS.md](docs/CUSTOM_MODELS.md)
 
 ## 许可证
 
 MIT License
-
-## 贡献
-
-欢迎提交 Issue 和 Pull Request！
