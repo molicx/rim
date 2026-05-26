@@ -164,7 +164,11 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 		}
 	} else {
 		if err := h.DB.Where("user_id = ? AND is_default = ?", userID, true).First(&config).Error; err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "请先设置默认 ASR 配置"})
+			if err == gorm.ErrRecordNotFound {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "请先配置语音识别服务"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 ASR 配置失败"})
 			return
 		}
 	}

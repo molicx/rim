@@ -60,9 +60,14 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
   const handleTranscribe = async () => {
     if (!downloadedAudio) return;
 
+    if (asrConfigs.length === 0) {
+      setError('请先配置语音识别服务');
+      return;
+    }
+
     const provider = selectedProvider || defaultConfig?.provider;
     if (!provider) {
-      setError('请先配置语音识别服务');
+      setError('请选择语音识别服务');
       return;
     }
 

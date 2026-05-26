@@ -418,10 +418,31 @@ const Dashboard: React.FC = () => {
                   <p className="text-xs text-slate-500 mt-1">输入播客链接，自动下载音频并转写</p>
                 </div>
                 <div className="p-6">
-                  <PodcastLinkInput
-                    asrConfigs={asrConfigs}
-                    onTranscriptionComplete={handleTranscriptionComplete}
-                  />
+                  {asrConfigs.length === 0 ? (
+                    <div className="text-center py-8">
+                      <div className="w-16 h-16 bg-amber-50 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                        <svg className="w-8 h-8 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                      </div>
+                      <p className="text-sm text-slate-700 font-medium mb-2">请先配置语音识别服务</p>
+                      <p className="text-xs text-slate-500 mb-4">支持讯飞、阿里云、OpenAI Whisper 等多种服务</p>
+                      <button
+                        onClick={() => setShowASRConfigModal(true)}
+                        className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 text-white rounded-xl text-sm font-medium hover:bg-violet-700 transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                        </svg>
+                        配置语音识别
+                      </button>
+                    </div>
+                  ) : (
+                    <PodcastLinkInput
+                      asrConfigs={asrConfigs}
+                      onTranscriptionComplete={handleTranscriptionComplete}
+                    />
+                  )}
                 </div>
               </div>
             ) : (
