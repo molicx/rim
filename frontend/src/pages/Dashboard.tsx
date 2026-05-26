@@ -7,6 +7,7 @@ import ConfigModal from '@/components/ConfigModal';
 import ASRConfigModal from '@/components/ASRConfigModal';
 import AudioUploader from '@/components/AudioUploader';
 import PodcastLinkInput from '@/components/PodcastLinkInput';
+import { TranscriptionTask } from '@/types';
 
 const Dashboard: React.FC = () => {
   const [configs, setConfigs] = useState<AIConfig[]>([]);
@@ -47,6 +48,11 @@ const Dashboard: React.FC = () => {
     } catch (err) {
       console.error('Failed to load ASR configs:', err);
     }
+  };
+
+  const handleTranscriptionComplete = (task: TranscriptionTask) => {
+    // 可以在这里添加转写完成后的处理，比如刷新总结列表
+    console.log('Transcription task submitted:', task);
   };
 
   const loadConfigs = async () => {
@@ -412,7 +418,10 @@ const Dashboard: React.FC = () => {
                   <p className="text-xs text-slate-500 mt-1">输入播客链接，自动下载音频并转写</p>
                 </div>
                 <div className="p-6">
-                  <PodcastLinkInput />
+                  <PodcastLinkInput
+                    asrConfigs={asrConfigs}
+                    onTranscriptionComplete={handleTranscriptionComplete}
+                  />
                 </div>
               </div>
             ) : (
