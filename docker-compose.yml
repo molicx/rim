@@ -26,7 +26,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: rim-redis
-    command: redis-server --appendonly yes
+    command: redis-server --appendonly yes --requirepass rim_redis_password_2026
     ports:
       - "6379:6379"
     volumes:
@@ -34,7 +34,7 @@ services:
     networks:
       - rim-network
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD", "redis-cli", "-a", "rim_redis_password_2026", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -103,9 +103,9 @@ services:
     environment:
       - API_PORT=8000
       - API_HOST=0.0.0.0
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://:rim_redis_password_2026@redis:6379/0
+      - CELERY_BROKER_URL=redis://:rim_redis_password_2026@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:rim_redis_password_2026@redis:6379/0
       - DEFAULT_AI_PROVIDER=openai
       - DEFAULT_AI_MODEL=gpt-4
       - WHISPER_MODEL=base
@@ -132,9 +132,9 @@ services:
     container_name: rim-celery-worker
     command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
     environment:
-      - REDIS_URL=redis://redis:6379/0
-      - CELERY_BROKER_URL=redis://redis:6379/0
-      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      - REDIS_URL=redis://:rim_redis_password_2026@redis:6379/0
+      - CELERY_BROKER_URL=redis://:rim_redis_password_2026@redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://:rim_redis_password_2026@redis:6379/0
       - WHISPER_MODEL=base
       - WHISPER_DEVICE=cpu
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

@@ -25,20 +25,27 @@ def detect_url_type(url: str) -> str:
     """检测 URL 类型"""
     parsed = urlparse(url)
     path = parsed.path.lower()
+    netloc = parsed.netloc.lower()
 
     # 检查是否是直接的音频文件链接
     for ext in AUDIO_EXTENSIONS:
         if path.endswith(ext):
             return 'direct'
 
-    # 检查是否是 RSS 链接
+    # 检查是否是 RSS 链接（路径特征）
     if path.endswith('.rss') or path.endswith('.xml') or 'rss' in path or 'feed' in path:
         return 'rss'
 
-    # 检查是否是播客平台
-    # for platform, pattern in PODCAST_PLATFORMS.items():
-    #     if re.search(pattern, parsed.netloc):
-    #         return f'podcast:{platform}'
+    # 检查是否是已知的 RSS 生成服务
+    rss_services = ['rsshub.app', 'rss.', 'feed.', 'podcast.']
+    for service in rss_services:
+        if service in netloc:
+            return 'rss'
+
+    # 检查 URL 参数中是否有 RSS 相关标识
+    query = parsed.query.lower()
+    if 'format=rss' in query or 'type=rss' in query or 'feed=' in query:
+        return 'rss'
 
     # 默认当作通用 URL 处理
     return 'unknown'
@@ -220,16 +227,29 @@ async def process_podcast_url(url: str, upload_dir: str) -> Dict:
         })
 
     else:
-        # 未知类型，尝试直接下载
+        # 未知类型，先尝试当作 RSS 解析
         try:
-            filepath, meta = await download_audio(url, upload_dir)
+            rss_info = await fetch_rss_feed(url)
+            audio_url = rss_info['audio_url']
+            filepath, meta = await download_audio(audio_url, upload_dir)
             result.update({
                 'audio_path': filepath,
-                'title': meta['filename'],
-                'url_type': 'direct',
+                'title': rss_info['title'],
+                'audio_url': audio_url,
+                'url_type': 'rss',
                 **meta,
             })
-        except Exception as e:
-            raise ValueError(f"无法处理该链接: {e}")
+        except Exception:
+            # RSS 解析失败，尝试直接下载
+            try:
+                filepath, meta = await download_audio(url, upload_dir)
+                result.update({
+                    'audio_path': filepath,
+                    'title': meta['filename'],
+                    'url_type': 'direct',
+                    **meta,
+                })
+            except Exception as e:
+                raise ValueError(f"无法处理该链接: {e}")
 
     return result
