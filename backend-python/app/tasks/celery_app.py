@@ -12,7 +12,6 @@ celery_app = Celery(
     "rim_tasks",
     broker=CELERY_BROKER_URL,
     backend=CELERY_RESULT_BACKEND,
-    include=["app.tasks.ai_tasks", "app.tasks.audio_tasks"]  # 包含任务模块
 )
 
 # Celery 配置
@@ -34,3 +33,8 @@ celery_app.conf.task_routes = {
     "app.tasks.ai_tasks.*": {"queue": "ai_tasks"},
     "app.tasks.audio_tasks.*": {"queue": "ai_tasks"},
 }
+
+# 导入任务模块以注册 Celery 任务
+# 必须在 celery_app 创建之后导入
+from . import ai_tasks  # noqa: F401
+from . import audio_tasks  # noqa: F401
