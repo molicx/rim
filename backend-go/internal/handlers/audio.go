@@ -25,11 +25,26 @@ type AudioHandler struct {
 }
 
 type AudioUploadResponse struct {
-	ID       uint   `json:"id"`
-	Title    string `json:"title"`
-	Filename string `json:"filename"`
-	FileSize int64  `json:"file_size"`
+	ID       uint    `json:"id"`
+	Title    string  `json:"title"`
+	Filename string  `json:"filename"`
+	FileSize int64   `json:"file_size"`
 	Duration float64 `json:"duration,omitempty"`
+}
+
+// 播客链接请求
+type PodcastURLRequest struct {
+	URL string `json:"url" binding:"required"`
+}
+
+// 播客处理响应
+type PodcastProcessResponse struct {
+	AudioID   uint   `json:"audio_id"`
+	Title     string `json:"title"`
+	SourceURL string `json:"source_url"`
+	URLType   string `json:"url_type"`
+	Status    string `json:"status"`
+	Message   string `json:"message"`
 }
 
 type TranscribeRequest struct {
@@ -281,4 +296,81 @@ func (h *AudioHandler) submitTranscriptionTask(taskID uint, audioPath, provider 
 
 	// 更新任务状态为处理中
 	h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "processing")
+}
+
+// ProcessPodcastURL 处理播客链接
+func (h *AudioHandler) ProcessPodcastURL(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	var req PodcastURLRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入有效的 URL"})
+		return
+	}
+
+	// 调用 Python 服务处理播客链接
+	type PodcastProcessRequest struct {
+		URL       string `json:"url"`
+		UploadDir string `json:"upload_dir"`
+	}
+
+	reqBody, _ := json.Marshal(PodcastProcessRequest{
+		URL:       req.URL,
+		UploadDir: h.UploadDir,
+	})
+
+	resp, err := http.Post(
+		h.PythonAIURL+"/api/v1/process-podcast",
+		"application/json",
+		bytes.NewBuffer(reqBody),
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "播客处理服务不可用"})
+		return
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		c.JSON(resp.StatusCode, gin.H{"error": string(body)})
+		return
+	}
+
+	// 解析 Python 服务的响应
+	var result struct {
+		AudioPath string `json:"audio_path"`
+		Title     string `json:"title"`
+		URLType   string `json:"url_type"`
+		SourceURL string `json:"source_url"`
+		Filename  string `json:"filename"`
+		Size      int64  `json:"size"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "解析响应失败"})
+		return
+	}
+
+	// 保存音频记录到数据库
+	audio := models.Audio{
+		UserID:   userID,
+		Title:    result.Title,
+		Filename: result.Filename,
+		FilePath: result.AudioPath,
+		FileSize: result.Size,
+		FileType: "podcast",
+	}
+
+	if err := h.DB.Create(&audio).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存音频记录失败"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, PodcastProcessResponse{
+		AudioID:   audio.ID,
+		Title:     audio.Title,
+		SourceURL: result.SourceURL,
+		URLType:   result.URLType,
+		Status:    "downloaded",
+		Message:   "音频下载成功，可以开始转写",
+	})
 }

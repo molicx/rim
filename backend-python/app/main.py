@@ -254,6 +254,36 @@ async def transcribe_audio(request: TranscribeAPIRequest):
         raise HTTPException(status_code=500, detail=f"转写失败: {str(e)}")
 
 
+# ==================== 播客链接处理 API ====================
+
+class ProcessPodcastRequest(BaseModel):
+    url: str
+    upload_dir: str = "/app/uploads"
+
+
+@app.post("/api/v1/process-podcast")
+async def process_podcast(request: ProcessPodcastRequest):
+    """处理播客链接，下载音频文件"""
+    try:
+        from app.services.podcast import process_podcast_url
+
+        result = await process_podcast_url(request.url, request.upload_dir)
+
+        return {
+            "audio_path": result["audio_path"],
+            "title": result["title"],
+            "url_type": result["url_type"],
+            "source_url": result["source_url"],
+            "filename": result.get("filename", ""),
+            "size": result.get("size", 0),
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"Podcast processing failed: {e}")
+        raise HTTPException(status_code=500, detail=f"播客处理失败: {str(e)}")
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

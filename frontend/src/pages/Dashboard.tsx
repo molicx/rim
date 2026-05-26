@@ -6,6 +6,7 @@ import { AIConfig, ASRConfig, Summary } from '@/types';
 import ConfigModal from '@/components/ConfigModal';
 import ASRConfigModal from '@/components/ASRConfigModal';
 import AudioUploader from '@/components/AudioUploader';
+import PodcastLinkInput from '@/components/PodcastLinkInput';
 
 const Dashboard: React.FC = () => {
   const [configs, setConfigs] = useState<AIConfig[]>([]);
@@ -27,7 +28,7 @@ const Dashboard: React.FC = () => {
   const [showASRConfigModal, setShowASRConfigModal] = useState(false);
   const [editingASRConfig, setEditingASRConfig] = useState<ASRConfig | null>(null);
   const [asrConfigs, setAsrConfigs] = useState<ASRConfig[]>([]);
-  const [activeTab, setActiveTab] = useState<'text' | 'audio'>('text');
+  const [activeTab, setActiveTab] = useState<'text' | 'audio' | 'podcast'>('text');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const logout = useAuthStore((state) => state.logout);
@@ -336,6 +337,22 @@ const Dashboard: React.FC = () => {
               <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">需配置</span>
             )}
           </button>
+          <button
+            onClick={() => setActiveTab('podcast')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              activeTab === 'podcast'
+                ? 'bg-pink-600 text-white shadow-sm'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+            }`}
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+            </svg>
+            播客链接
+            {asrConfigs.length === 0 && (
+              <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium">需配置</span>
+            )}
+          </button>
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-5 gap-8">
@@ -378,6 +395,24 @@ const Dashboard: React.FC = () => {
                   ) : (
                     <AudioUploader asrConfigs={asrConfigs} />
                   )}
+                </div>
+              </div>
+            ) : activeTab === 'podcast' ? (
+              /* 播客链接区域 */
+              <div className="bg-white rounded-2xl shadow-sm border border-slate-200/60 overflow-hidden">
+                <div className="px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-pink-50 to-white">
+                  <h2 className="text-lg font-semibold text-slate-900 flex items-center gap-2">
+                    <span className="w-8 h-8 bg-pink-100 rounded-lg flex items-center justify-center">
+                      <svg className="w-4 h-4 text-pink-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
+                      </svg>
+                    </span>
+                    播客链接
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-1">输入播客链接，自动下载音频并转写</p>
+                </div>
+                <div className="p-6">
+                  <PodcastLinkInput />
                 </div>
               </div>
             ) : (
