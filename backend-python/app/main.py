@@ -269,6 +269,8 @@ async def transcribe_async(request: TranscribeAsyncRequest):
     try:
         from app.tasks.audio_tasks import transcribe_audio_task
 
+        logger.info(f"Submitting async transcription: task_id={request.task_id}, provider={request.provider}, audio={request.audio_path}")
+
         # 提交 Celery 任务
         task = transcribe_audio_task.delay(
             request.task_id,
@@ -277,13 +279,15 @@ async def transcribe_async(request: TranscribeAsyncRequest):
             request.config,
         )
 
+        logger.info(f"Celery task submitted: celery_task_id={task.id}")
+
         return {
             "task_id": request.task_id,
             "celery_task_id": task.id,
             "status": "processing",
         }
     except Exception as e:
-        logger.error(f"Failed to submit async transcription: {e}")
+        logger.error(f"Failed to submit async transcription: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"提交转写任务失败: {str(e)}")
 
 

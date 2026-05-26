@@ -27,24 +27,25 @@ def notify_go_callback(task_id: int, status: str, text: str = "", segments: list
         "error": error,
     }
 
+    logger.info(f"Calling Go callback: {callback_url}, task_id={task_id}, status={status}")
+
     try:
         response = httpx.post(callback_url, json=payload, timeout=10.0)
+        logger.info(f"Go callback response: status={response.status_code}")
         if response.status_code != 200:
-            logger.error(f"Callback to Go API failed: {response.status_code}")
+            logger.error(f"Callback to Go API failed: {response.status_code}, body={response.text}")
     except Exception as e:
-        logger.error(f"Callback error: {e}")
+        logger.error(f"Callback error: {e}", exc_info=True)
 
 
 @celery_app.task(bind=True, name="app.tasks.audio_tasks.transcribe_audio", queue="ai_tasks")
 def transcribe_audio_task(self, task_id: int, audio_path: str, provider: str, config: dict):
     """
     异步执行音频转写
-    :param task_id: 任务 ID
-    :param audio_path: 音频文件路径
-    :param provider: ASR 提供商
-    :param config: 提供商配置
     """
     import asyncio
+
+    logger.info(f"Transcription task started: task_id={task_id}, provider={provider}, audio={audio_path}")
 
     # 更新任务状态为处理中
     self.update_state(state="PROCESSING", meta={"progress": 10})
@@ -53,23 +54,29 @@ def transcribe_audio_task(self, task_id: int, audio_path: str, provider: str, co
         service = TranscriptionService()
 
         # 验证音频文件
+        logger.info(f"Validating audio file: {audio_path}")
         is_valid, err_msg = service.validate_audio_file(audio_path)
         if not is_valid:
+            logger.error(f"Audio validation failed: {err_msg}")
             notify_go_callback(task_id, "failed", error=err_msg)
             return {"status": "failed", "error": err_msg}
 
         self.update_state(state="PROCESSING", meta={"progress": 30})
 
         # 转换音频格式
+        logger.info(f"Converting audio to WAV")
         converted_path = service.convert_to_wav(audio_path)
         self.update_state(state="PROCESSING", meta={"progress": 50})
 
-        # 执行转写（在线程中运行异步代码）
+        # 执行转写
+        logger.info(f"Starting transcription with provider: {provider}")
         loop = asyncio.new_event_loop()
         result = loop.run_until_complete(
             service.transcribe(converted_path, provider, config)
         )
         loop.close()
+
+        logger.info(f"Transcription completed: duration={result.duration:.1f}s, text_length={len(result.text)}")
 
         self.update_state(state="PROCESSING", meta={"progress": 90})
 
@@ -103,6 +110,6 @@ def transcribe_audio_task(self, task_id: int, audio_path: str, provider: str, co
         }
 
     except Exception as e:
-        logger.error(f"Transcription task failed: {e}")
+        logger.error(f"Transcription task failed: {e}", exc_info=True)
         notify_go_callback(task_id, "failed", error=str(e))
         return {"status": "failed", "error": str(e)}
