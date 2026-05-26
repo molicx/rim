@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -155,14 +156,34 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	// 获取 ASR 配置
+	// 获取 ASR 配置 - 优先使用指定 ConfigID，否则根据 provider 查找，最后回退到默认配置
 	var config models.ASRConfig
 	if req.ConfigID > 0 {
 		if err := h.DB.Where("id = ? AND user_id = ?", req.ConfigID, userID).First(&config).Error; err != nil {
 			c.JSON(http.StatusNotFound, gin.H{"error": "ASR 配置不存在"})
 			return
 		}
+	} else if req.Provider != "" {
+		// 根据 provider 名称查找配置
+		log.Printf("Looking for ASR config: user_id=%d, provider=%s", userID, req.Provider)
+		if err := h.DB.Where("user_id = ? AND provider = ?", userID, req.Provider).First(&config).Error; err != nil {
+			if err == gorm.ErrRecordNotFound {
+				// 列出用户所有 ASR 配置用于调试
+				var allConfigs []models.ASRConfig
+				h.DB.Where("user_id = ?", userID).Find(&allConfigs)
+				var providers []string
+				for _, c := range allConfigs {
+					providers = append(providers, c.Provider)
+				}
+				log.Printf("User %d ASR configs: %v", userID, providers)
+				c.JSON(http.StatusBadRequest, gin.H{"error": "未找到 " + req.Provider + " 的 ASR 配置"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 ASR 配置失败"})
+			return
+		}
 	} else {
+		// 回退到默认配置
 		if err := h.DB.Where("user_id = ? AND is_default = ?", userID, true).First(&config).Error; err != nil {
 			if err == gorm.ErrRecordNotFound {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "请先配置语音识别服务"})
