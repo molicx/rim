@@ -264,8 +264,17 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 
 	// 提交到 Celery 异步处理
 	log.Printf("Submitting celery task: task_id=%d, provider=%s, audio=%s", task.ID, req.Provider, audio.FilePath)
-	h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
-	log.Printf("Celery task submitted for task_id=%d", task.ID)
+	
+	// 使用 goroutine 异步提交，避免阻塞响应
+	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("Panic in submitTranscriptionTaskToCelery: %v", r)
+			}
+		}()
+		h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
+		log.Printf("Celery task submitted for task_id=%d", task.ID)
+	}()
 
 	c.JSON(http.StatusAccepted, TranscriptionTaskResponse{
 		TaskID:  fmt.Sprintf("%d", task.ID),
