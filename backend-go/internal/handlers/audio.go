@@ -262,19 +262,18 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 		return
 	}
 
-	// 提交到 Celery 异步处理
+	// 同步提交 Celery 任务（确保任务入队后再返回）
 	log.Printf("Submitting celery task: task_id=%d, provider=%s, audio=%s", task.ID, req.Provider, audio.FilePath)
 	
-	// 使用 goroutine 异步提交，避免阻塞响应
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("Panic in submitTranscriptionTaskToCelery: %v", r)
-			}
-		}()
-		h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
-		log.Printf("Celery task submitted for task_id=%d", task.ID)
-	}()
+	err = h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
+	if err != nil {
+		log.Printf("Failed to submit celery task: %v", err)
+		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", task.ID).Updates(map[string]interface{}{"status": "failed", "error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "提交转写任务失败: " + err.Error()})
+		return
+	}
+	
+	log.Printf("Celery task submitted for task_id=%d", task.ID)
 
 	c.JSON(http.StatusAccepted, TranscriptionTaskResponse{
 		TaskID:  fmt.Sprintf("%d", task.ID),
@@ -320,7 +319,7 @@ func (h *AudioHandler) ListTranscriptionTasks(c *gin.Context) {
 }
 
 // submitTranscriptionTaskToCelery 提交转写任务到 Celery 队列
-func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, provider string, apiKey string, apiSecret string, config models.ASRConfig) {
+func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, provider string, apiKey string, apiSecret string, config models.ASRConfig) error {
 	// 构建配置
 	providerConfig := map[string]interface{}{
 		"api_key": apiKey,
@@ -367,7 +366,7 @@ func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, p
 	if err != nil {
 		log.Printf("Failed to call Python transcribe-async: %v", err)
 		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{"status": "failed", "error": err.Error()})
-		return
+		return fmt.Errorf("调用 Python 转写服务失败: %v", err)
 	}
 	defer resp.Body.Close()
 
@@ -377,12 +376,13 @@ func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, p
 	if resp.StatusCode != http.StatusOK {
 		log.Printf("Celery task submission failed with status: %d, body: %s", resp.StatusCode, string(body))
 		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{"status": "failed", "error": string(body)})
-		return
+		return fmt.Errorf("Python 转写服务返回错误: status=%d, body=%s", resp.StatusCode, string(body))
 	}
 
 	// 更新任务状态为处理中
 	h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "processing")
 	log.Printf("Task status updated to processing for task_id=%d", taskID)
+	return nil
 }
 
 // ProcessPodcastURL 处理播客链接
