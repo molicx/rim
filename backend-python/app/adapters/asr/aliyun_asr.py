@@ -3,6 +3,8 @@
 文档: https://help.aliyun.com/zh/isi/developer-reference/api-nls-cloud-gateway
 """
 import asyncio
+import hashlib
+import hmac
 import json
 import time
 from typing import Dict, Optional
