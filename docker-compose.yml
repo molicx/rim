@@ -130,7 +130,7 @@ services:
       context: ./backend-python
       dockerfile: Dockerfile
     container_name: rim-celery-worker
-    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=2 -Q ai_tasks,celery
     environment:
       - REDIS_URL=redis://:rim_redis_password_2026@redis:6379/0
       - CELERY_BROKER_URL=redis://:rim_redis_password_2026@redis:6379/0
