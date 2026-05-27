@@ -96,15 +96,25 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
   };
 
   const handleTranscribe = async () => {
-    if (!downloadedAudio) return;
+    console.log('handleTranscribe called', { downloadedAudio, asrConfigs, selectedProvider, defaultConfig });
+    
+    if (!downloadedAudio) {
+      console.log('No downloadedAudio');
+      setError('请先下载音频');
+      return;
+    }
 
     if (asrConfigs.length === 0) {
+      console.log('No ASR configs');
       setError('请先配置语音识别服务');
       return;
     }
 
     const provider = selectedProvider || defaultConfig?.provider;
+    console.log('Using provider:', provider);
+    
     if (!provider) {
+      console.log('No provider selected');
       setError('请选择语音识别服务');
       return;
     }
@@ -113,11 +123,15 @@ const PodcastLinkInput: React.FC<PodcastLinkInputProps> = ({ asrConfigs, onTrans
     setError('');
 
     try {
-      const response = await api.post('/audio/transcribe', {
+      const payload = {
         audio_id: downloadedAudio.id,
         title: downloadedAudio.title,
         provider: provider,
-      });
+      };
+      console.log('Submitting transcription:', payload);
+      
+      const response = await api.post('/audio/transcribe', payload);
+      console.log('Transcription submitted:', response.data);
 
       const taskData = response.data;
       const newTask: TranscriptionTask = {
