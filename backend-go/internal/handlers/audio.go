@@ -263,7 +263,7 @@ func (h *AudioHandler) TranscribeAudio(c *gin.Context) {
 	}
 
 	// 提交到 Celery 异步处理
-	log.Printf("Submitting celery task: task_id=%d, provider=%d, audio=%s", task.ID, req.Provider, audio.FilePath)
+	log.Printf("Submitting celery task: task_id=%d, provider=%s, audio=%s", task.ID, req.Provider, audio.FilePath)
 	h.submitTranscriptionTaskToCelery(task.ID, audio.FilePath, req.Provider, decryptedKey, decryptedSecret, config)
 	log.Printf("Celery task submitted for task_id=%d", task.ID)
 
@@ -349,14 +349,15 @@ func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, p
 	url := h.PythonAIURL + "/api/v1/transcribe-async"
 	log.Printf("Calling Python transcribe-async: url=%s, task_id=%d", url, taskID)
 
-	resp, err := http.Post(
+	client := &http.Client{Timeout: 10 * time.Second}
+	resp, err := client.Post(
 		url,
 		"application/json",
 		bytes.NewBuffer(reqBody),
 	)
 	if err != nil {
-		log.Printf("Failed to submit celery task: %v", err)
-		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "failed")
+		log.Printf("Failed to call Python transcribe-async: %v", err)
+		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{"status": "failed", "error": err.Error()})
 		return
 	}
 	defer resp.Body.Close()
@@ -365,8 +366,8 @@ func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, p
 	log.Printf("Python transcribe-async response: status=%d, body=%s", resp.StatusCode, string(body))
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("Celery task submission failed with status: %d", resp.StatusCode)
-		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Update("status", "failed")
+		log.Printf("Celery task submission failed with status: %d, body: %s", resp.StatusCode, string(body))
+		h.DB.Model(&models.TranscriptionTask{}).Where("id = ?", taskID).Updates(map[string]interface{}{"status": "failed", "error": string(body)})
 		return
 	}
 
