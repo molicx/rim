@@ -47,8 +47,10 @@ class AliyunASR(ASRProvider):
         """使用阿里云 SDK 获取 token，带缓存"""
         now = time.time()
         if self._token and now < self._token_expire:
+            logger.debug(f"Using cached token, expires in {self._token_expire - now:.0f}s")
             return self._token
 
+        logger.info(f"Requesting new Aliyun ASR token from nls-meta.{self.region}.aliyuncs.com")
         request = CommonRequest()
         request.set_method('POST')
         request.set_domain('nls-meta.' + self.region + '.aliyuncs.com')
@@ -56,14 +58,30 @@ class AliyunASR(ASRProvider):
         request.set_action_name('CreateToken')
 
         try:
-            response = self._client.do_action_with_exception(request)
+            from aliyunsdkcore.acs_exception.exceptions import ServerException, ClientException
+            try:
+                response = self._client.do_action_with_exception(request)
+            except ServerException as se:
+                logger.error(f"Aliyun ServerException: error_code={se.get_error_code()}, message={se.get_error_msg()}")
+                raise
+            except ClientException as ce:
+                logger.error(f"Aliyun ClientException: error_code={ce.get_error_code()}, message={ce.get_error_msg()}")
+                raise
+            logger.info(f"CreateToken HTTP response: {response[:500] if isinstance(response, str) else response}")
             result = json.loads(response)
+            logger.info(f"CreateToken parsed result: {json.dumps(result, ensure_ascii=False)[:500]}")
             token_info = result.get('Token', {})
+            if not token_info:
+                logger.error(f"Token field missing in response: {result}")
+                raise Exception(f"CreateToken returned no Token field: {result}")
             self._token = token_info.get('Id', '')
             expire_time = token_info.get('ExpireTime', 0)
+            if not self._token:
+                logger.error(f"Token Id is empty, token_info: {token_info}")
+                raise Exception(f"CreateToken returned empty token Id")
             # 提前 5 分钟刷新
             self._token_expire = expire_time - 300
-            logger.info(f"Got Aliyun ASR token, expires at {expire_time}")
+            logger.info(f"Got Aliyun ASR token, length={len(self._token)}, expires at {expire_time}")
             return self._token
         except Exception as e:
             logger.error(f"Failed to get Aliyun token: {e}", exc_info=True)
