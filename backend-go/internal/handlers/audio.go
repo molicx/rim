@@ -501,3 +501,43 @@ func (h *AudioHandler) TranscriptionCallback(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
+
+// DeleteTranscriptionTask 删除转写任务
+func (h *AudioHandler) DeleteTranscriptionTask(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	taskID := c.Param("id")
+
+	result := h.DB.Where("id = ? AND user_id = ?", taskID, userID).Delete(&models.TranscriptionTask{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除失败"})
+		return
+	}
+
+	if result.RowsAffected == 0 {
+		c.JSON(http.StatusNotFound, gin.H{"error": "转写任务不存在"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
+}
+
+// BatchDeleteTranscriptionTasks 批量删除转写任务
+func (h *AudioHandler) BatchDeleteTranscriptionTasks(c *gin.Context) {
+	userID := c.GetUint("user_id")
+
+	var req struct {
+		IDs []uint `json:"ids" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "无效的请求参数"})
+		return
+	}
+
+	result := h.DB.Where("id IN ? AND user_id = ?", req.IDs, userID).Delete(&models.TranscriptionTask{})
+	if result.Error != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "批量删除失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": fmt.Sprintf("成功删除 %d 个任务", result.RowsAffected)})
+}

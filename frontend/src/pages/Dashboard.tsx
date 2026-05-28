@@ -29,6 +29,7 @@ const Dashboard: React.FC = () => {
   const [editingASRConfig, setEditingASRConfig] = useState<ASRConfig | null>(null);
   const [asrConfigs, setAsrConfigs] = useState<ASRConfig[]>([]);
   const [transcriptionTasks, setTranscriptionTasks] = useState<TranscriptionTask[]>([]);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<number>>(new Set());
   const [activeTab, setActiveTab] = useState<'text' | 'audio' | 'podcast'>('text');
   const [rightPanelTab, setRightPanelTab] = useState<'summaries' | 'transcriptions'>('transcriptions');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -788,50 +789,110 @@ const Dashboard: React.FC = () => {
                       <p className="text-xs text-slate-400 mt-1">上传音频或输入播客链接开始转写</p>
                     </div>
                   ) : (
-                    <div className="space-y-3 max-h-[500px] overflow-y-auto">
-                      {transcriptionTasks.map((task) => (
-                        <div
-                          key={task.id}
-                          className="p-3 bg-slate-50 rounded-xl border border-slate-100 hover:border-slate-200 hover:shadow-sm transition-all cursor-pointer"
-                          onClick={() => navigate(`/transcription/${task.id}`)}
-                        >
-                          <div className="flex items-center justify-between mb-2">
-                            <h4 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
-                              {task.title}
-                            </h4>
-                            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                              task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
-                              task.status === 'failed' ? 'bg-red-100 text-red-700' :
-                              task.status === 'processing' ? 'bg-blue-100 text-blue-700' :
-                              'bg-amber-100 text-amber-700'
-                            }`}>
-                              {task.status === 'pending' ? '等待中' :
-                               task.status === 'processing' ? '转写中' :
-                               task.status === 'completed' ? '已完成' : '失败'}
-                            </span>
+                    <>
+                      {/* 批量操作栏 */}
+                      {selectedTaskIds.size > 0 && (
+                        <div className="mb-3 p-2 bg-slate-100 rounded-lg flex items-center justify-between">
+                          <span className="text-sm text-slate-600">已选择 {selectedTaskIds.size} 个任务</span>
+                          <div className="flex gap-2">
+                            <button
+                              onClick={async () => {
+                                if (!confirm(`确定删除选中的 ${selectedTaskIds.size} 个任务吗？`)) return;
+                                try {
+                                  await api.post('/audio/transcriptions/batch-delete', {
+                                    ids: Array.from(selectedTaskIds)
+                                  });
+                                  setSelectedTaskIds(new Set());
+                                  loadTranscriptionTasks();
+                                } catch (err) {
+                                  alert('删除失败');
+                                }
+                              }}
+                              className="px-3 py-1 bg-red-500 text-white rounded-lg text-xs font-medium hover:bg-red-600 transition-colors"
+                            >
+                              删除选中
+                            </button>
+                            <button
+                              onClick={() => setSelectedTaskIds(new Set())}
+                              className="px-3 py-1 bg-slate-200 text-slate-600 rounded-lg text-xs font-medium hover:bg-slate-300 transition-colors"
+                            >
+                              取消选择
+                            </button>
                           </div>
-                          <div className="flex items-center justify-between text-xs text-slate-500">
-                            <span>{task.provider}</span>
-                            <span>{new Date(task.created_at).toLocaleString('zh-CN')}</span>
-                          </div>
-                          {task.status === 'processing' && (
-                            <div className="mt-2">
-                              <div className="bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                                <div className="bg-blue-500 h-full rounded-full w-2/3 animate-pulse" />
-                              </div>
-                            </div>
-                          )}
-                          {task.status === 'failed' && task.error && (
-                            <p className="mt-2 text-xs text-red-600">{task.error}</p>
-                          )}
-                          {task.status === 'completed' && task.result && (
-                            <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 max-h-20 overflow-y-auto">
-                              <p className="text-xs text-slate-600 line-clamp-3">{task.result}</p>
-                            </div>
-                          )}
                         </div>
-                      ))}
-                    </div>
+                      )}
+                      <div className="space-y-3 max-h-[500px] overflow-y-auto">
+                        {transcriptionTasks.map((task) => {
+                          const isSelected = selectedTaskIds.has(task.id);
+                          return (
+                            <div
+                              key={task.id}
+                              className={`p-3 rounded-xl border transition-all cursor-pointer ${
+                                isSelected
+                                  ? 'bg-blue-50 border-blue-200'
+                                  : 'bg-slate-50 border-slate-100 hover:border-slate-200 hover:shadow-sm'
+                              }`}
+                              onClick={(e) => {
+                                // 如果点击的是复选框，不触发跳转
+                                if ((e.target as HTMLElement).tagName === 'INPUT') return;
+                                navigate(`/transcription/${task.id}`);
+                              }}
+                            >
+                              {/* 复选框和标题 */}
+                              <div className="flex items-center gap-2 mb-2">
+                                <input
+                                  type="checkbox"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    e.stopPropagation();
+                                    const newSelected = new Set(selectedTaskIds);
+                                    if (e.target.checked) {
+                                      newSelected.add(task.id);
+                                    } else {
+                                      newSelected.delete(task.id);
+                                    }
+                                    setSelectedTaskIds(newSelected);
+                                  }}
+                                  className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <h4 className="font-medium text-slate-900 text-sm line-clamp-1 flex-1">
+                                  {task.title}
+                                </h4>
+                                <span className={`px-2 py-0.5 rounded text-xs font-medium shrink-0 ${
+                                  task.status === 'completed' ? 'bg-emerald-100 text-emerald-700' :
+                                  task.status === 'failed' ? 'bg-red-100 text-red-700' :
+                                  task.status === 'processing' ? 'bg-blue-100 text-blue-700' :
+                                  'bg-amber-100 text-amber-700'
+                                }`}>
+                                  {task.status === 'pending' ? '等待中' :
+                                   task.status === 'processing' ? '转写中' :
+                                   task.status === 'completed' ? '已完成' : '失败'}
+                                </span>
+                              </div>
+                              <div className="flex items-center justify-between text-xs text-slate-500 pl-6">
+                                <span>{task.provider}</span>
+                                <span>{new Date(task.created_at).toLocaleString('zh-CN')}</span>
+                              </div>
+                              {task.status === 'processing' && (
+                                <div className="mt-2 pl-6">
+                                  <div className="bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                    <div className="bg-blue-500 h-full rounded-full w-2/3 animate-pulse" />
+                                  </div>
+                                </div>
+                              )}
+                              {task.status === 'failed' && task.error && (
+                                <p className="mt-2 text-xs text-red-600 pl-6 line-clamp-2">{task.error}</p>
+                              )}
+                              {task.status === 'completed' && task.result && (
+                                <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 max-h-20 overflow-y-auto pl-6">
+                                  <p className="text-xs text-slate-600 line-clamp-3">{task.result}</p>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
                   )
                 ) : (
                   /* 总结历史列表 */
