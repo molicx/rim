@@ -76,7 +76,7 @@ class AliyunASR(ASRProvider):
         logger.info(f"Aliyun ASR: {audio_path}, size={file_size/1024/1024:.2f}MB, duration={duration:.1f}s")
 
         # 如果获取时长失败（0），默认使用分段模式（安全降级）
-        max_duration = 30  # 30 秒一段（阿里云一句话识别 ASR 限制）
+        max_duration = 15  # 15 秒一段（阿里云一句话识别 ASR 限制）
         if duration > 0 and duration <= max_duration:
             logger.info(f"Audio <= {max_duration}s, using single request")
             return await self._transcribe_single(audio_path)
@@ -158,7 +158,7 @@ class AliyunASR(ASRProvider):
         with tempfile.TemporaryDirectory() as tmpdir:
             while offset < duration:
                 chunk_path = os.path.join(tmpdir, f"chunk_{chunk_idx}.mp3")
-                # 30秒 128kbps ≈ 480KB，安全地在 2MB 限制内
+                # 15秒 128kbps ≈ 240KB，安全地在 2MB 限制内
                 cmd = [
                     'ffmpeg', '-y', '-i', audio_path,
                     '-ss', str(offset), '-t', str(chunk_duration),
