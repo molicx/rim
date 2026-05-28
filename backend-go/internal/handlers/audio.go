@@ -293,13 +293,24 @@ func (h *AudioHandler) GetTranscriptionStatus(c *gin.Context) {
 		return
 	}
 
+	// 解析 segments JSON 字符串为数组
+	var segments interface{}
+	if task.Segments != "" {
+		if err := json.Unmarshal([]byte(task.Segments), &segments); err != nil {
+			log.Printf("Failed to parse segments: %v", err)
+			segments = []interface{}{}
+		}
+	} else {
+		segments = []interface{}{}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":         task.ID,
 		"status":     task.Status,
 		"title":      task.Title,
 		"provider":   task.Provider,
 		"text":       task.Result,
-		"segments":   task.Segments,
+		"segments":   segments,
 		"created_at": task.CreatedAt,
 		"updated_at": task.UpdatedAt,
 	})
