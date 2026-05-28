@@ -122,6 +122,15 @@ class TranscriptionService:
             compressed_path
         ]
 
+        # 检查 ffmpeg 是否可用
+        try:
+            subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
+        except FileNotFoundError:
+            logger.error("ffmpeg not installed")
+            raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，但 ffmpeg 未安装，无法压缩")
+        except Exception as e:
+            logger.warning(f"ffmpeg check failed: {e}")
+
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
             if result.returncode != 0:
@@ -136,7 +145,7 @@ class TranscriptionService:
 
             # 如果压缩后仍然太大，尝试更低比特率
             if compressed_size > max_size:
-                logger.warning(f"Compressed file still too large, trying lower bitrate...")
+                logger.warning(f"Compressed file still too large ({compressed_size/1024/1024:.2f}MB), trying lower bitrate...")
                 compressed_path2 = audio_path.rsplit('.', 1)[0] + '_compressed2.mp3'
                 cmd2 = [
                     'ffmpeg', '-y',
