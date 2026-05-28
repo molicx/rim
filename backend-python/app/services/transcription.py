@@ -81,12 +81,52 @@ class TranscriptionService:
     def convert_to_wav(self, audio_path: str) -> str:
         """
         将音频转换为 WAV 格式（16kHz, 16bit, 单声道）
+        同时压缩文件大小以适应 ASR 接口限制（最大 2MB）
         :return: 转换后的文件路径
         """
         import subprocess
 
         output_path = audio_path.rsplit('.', 1)[0] + '_converted.wav'
 
+        # 获取原始文件时长
+        duration = self.get_audio_duration(audio_path)
+
+        # 计算目标比特率以确保文件小于 2MB
+        # 2MB = 16777216 bits, 目标比特率 = 16777216 / duration
+        max_size_bits = 2 * 1024 * 1024 * 8  # 2MB in bits
+        if duration > 0:
+            target_bitrate = int(max_size_bits / duration * 0.9)  # 留 10% 余量
+            target_bitrate = max(target_bitrate, 8000)  # 最低 8kbps
+            target_bitrate = min(target_bitrate, 128000)  # 最高 128kbps
+        else:
+            target_bitrate = 64000
+
+        logger.info(f"Converting audio: duration={duration:.1f}s, target_bitrate={target_bitrate}")
+
+        # 先尝试用 Opus 编码（压缩率高）
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', audio_path,
+            '-acodec', 'libopus',
+            '-ac', '1',
+            '-ar', '16000',
+            '-b:a', f'{target_bitrate}',
+            '-vbr', 'on',
+            output_path.replace('.wav', '.opus')
+        ]
+
+        try:
+            result = subprocess.run(cmd, check=True, capture_output=True)
+            converted_path = output_path.replace('.wav', '.opus')
+            converted_size = os.path.getsize(converted_path)
+            logger.info(f"Audio converted: {converted_path}, size={converted_size / 1024 / 1024:.2f}MB")
+            return converted_path
+        except subprocess.CalledProcessError as e:
+            logger.error(f"Opus conversion failed: {e.stderr.decode() if e.stderr else 'unknown'}")
+        except FileNotFoundError:
+            logger.warning("ffmpeg not found")
+
+        # 回退到 WAV 格式
         cmd = [
             'ffmpeg', '-y',
             '-i', audio_path,
@@ -100,7 +140,7 @@ class TranscriptionService:
             subprocess.run(cmd, check=True, capture_output=True)
             return output_path
         except subprocess.CalledProcessError as e:
-            logger.error(f"Audio conversion failed: {e.stderr.decode()}")
+            logger.error(f"WAV conversion failed: {e.stderr.decode() if e.stderr else 'unknown'}")
             return audio_path  # 转换失败返回原文件
         except FileNotFoundError:
             logger.warning("ffmpeg not found, using original audio file")

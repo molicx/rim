@@ -6,6 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import json
+import os
 import time
 from typing import Dict, Optional
 
@@ -39,21 +40,48 @@ class AliyunASR(ASRProvider):
         """转写音频文件"""
         options = options or {}
 
-        # 读取音频文件（需要 PCM 格式，16kHz，16bit，单声道）
+        # 检查文件大小，阿里云 ASR 限制 2MB
+        file_size = os.path.getsize(audio_path)
+        max_size = 2 * 1024 * 1024  # 2MB
+
+        if file_size > max_size:
+            logger.warning(f"Audio file too large: {file_size / 1024 / 1024:.2f}MB > 2MB, compressing...")
+            # 使用 ffmpeg 压缩音频
+            compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
+            import subprocess
+            cmd = [
+                'ffmpeg', '-y',
+                '-i', audio_path,
+                '-acodec', 'libmp3lame',
+                '-ac', '1',
+                '-ar', '16000',
+                '-b:a', '64k',
+                compressed_path
+            ]
+            try:
+                subprocess.run(cmd, check=True, capture_output=True)
+                audio_path = compressed_path
+                file_size = os.path.getsize(audio_path)
+                logger.info(f"Audio compressed: {file_size / 1024 / 1024:.2f}MB")
+            except Exception as e:
+                logger.error(f"Audio compression failed: {e}")
+                raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，压缩失败: {e}")
+
+        # 读取音频文件
         with open(audio_path, 'rb') as f:
             audio_data = f.read()
 
         # 构建请求 URL
-        url = f"{self.base_url}?appkey={self.app_key}&format=pcm&sample_rate=16000"
+        url = f"{self.base_url}?appkey={self.app_key}&format=mp3&sample_rate=16000"
 
         headers = {
             'X-NLS-Token': self._generate_token(),
-            'Content-Type': 'application/octet-stream'
+            'Content-Type': 'audio/mp3'
         }
 
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, content=audio_data, headers=headers, timeout=60.0)
+                response = await client.post(url, content=audio_data, headers=headers, timeout=120.0)
                 result = response.json()
 
                 if result.get('status') != 20000000:
