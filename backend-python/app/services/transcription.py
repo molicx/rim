@@ -78,70 +78,90 @@ class TranscriptionService:
 
         return True, ""
 
-    def convert_to_wav(self, audio_path: str) -> str:
+    def convert_for_asr(self, audio_path: str, max_size_mb: int = 2) -> str:
         """
-        将音频转换为 WAV 格式（16kHz, 16bit, 单声道）
-        同时压缩文件大小以适应 ASR 接口限制（最大 2MB）
-        :return: 转换后的文件路径
+        压缩音频文件以适应 ASR 接口大小限制
+        :param audio_path: 原始音频文件路径
+        :param max_size_mb: 最大文件大小（MB）
+        :return: 压缩后的文件路径
         """
         import subprocess
 
-        output_path = audio_path.rsplit('.', 1)[0] + '_converted.wav'
+        file_size = os.path.getsize(audio_path)
+        max_size = max_size_mb * 1024 * 1024
 
-        # 获取原始文件时长
+        if file_size <= max_size:
+            logger.info(f"Audio file size OK: {file_size/1024/1024:.2f}MB <= {max_size_mb}MB")
+            return audio_path
+
+        logger.info(f"Audio file too large: {file_size/1024/1024:.2f}MB > {max_size_mb}MB, compressing...")
+
+        # 获取音频时长
         duration = self.get_audio_duration(audio_path)
+        logger.info(f"Audio duration: {duration:.1f}s")
 
-        # 计算目标比特率以确保文件小于 2MB
-        # 2MB = 16777216 bits, 目标比特率 = 16777216 / duration
-        max_size_bits = 2 * 1024 * 1024 * 8  # 2MB in bits
+        # 计算目标比特率
         if duration > 0:
-            target_bitrate = int(max_size_bits / duration * 0.9)  # 留 10% 余量
-            target_bitrate = max(target_bitrate, 8000)  # 最低 8kbps
+            target_bitrate = int((max_size * 8) / duration * 0.85)  # 留 15% 余量
+            target_bitrate = max(target_bitrate, 8000)   # 最低 8kbps
             target_bitrate = min(target_bitrate, 128000)  # 最高 128kbps
         else:
-            target_bitrate = 64000
+            target_bitrate = 32000
 
-        logger.info(f"Converting audio: duration={duration:.1f}s, target_bitrate={target_bitrate}")
+        logger.info(f"Target bitrate: {target_bitrate}bps")
 
-        # 先尝试用 Opus 编码（压缩率高）
+        # 压缩音频
+        compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
         cmd = [
             'ffmpeg', '-y',
             '-i', audio_path,
-            '-acodec', 'libopus',
+            '-acodec', 'libmp3lame',
             '-ac', '1',
             '-ar', '16000',
             '-b:a', f'{target_bitrate}',
-            '-vbr', 'on',
-            output_path.replace('.wav', '.opus')
+            compressed_path
         ]
 
         try:
-            result = subprocess.run(cmd, check=True, capture_output=True)
-            converted_path = output_path.replace('.wav', '.opus')
-            converted_size = os.path.getsize(converted_path)
-            logger.info(f"Audio converted: {converted_path}, size={converted_size / 1024 / 1024:.2f}MB")
-            return converted_path
-        except subprocess.CalledProcessError as e:
-            logger.error(f"Opus conversion failed: {e.stderr.decode() if e.stderr else 'unknown'}")
-        except FileNotFoundError:
-            logger.warning("ffmpeg not found")
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            if result.returncode != 0:
+                logger.error(f"ffmpeg error: {result.stderr[:500]}")
+                raise Exception(f"ffmpeg failed: {result.stderr[:200]}")
 
-        # 回退到 WAV 格式
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', audio_path,
-            '-acodec', 'pcm_s16le',
-            '-ac', '1',
-            '-ar', '16000',
-            output_path
-        ]
+            if not os.path.exists(compressed_path):
+                raise Exception("Compressed file not created")
 
-        try:
-            subprocess.run(cmd, check=True, capture_output=True)
-            return output_path
-        except subprocess.CalledProcessError as e:
-            logger.error(f"WAV conversion failed: {e.stderr.decode() if e.stderr else 'unknown'}")
-            return audio_path  # 转换失败返回原文件
-        except FileNotFoundError:
-            logger.warning("ffmpeg not found, using original audio file")
-            return audio_path
+            compressed_size = os.path.getsize(compressed_path)
+            logger.info(f"Audio compressed: {file_size/1024/1024:.2f}MB -> {compressed_size/1024/1024:.2f}MB")
+
+            # 如果压缩后仍然太大，尝试更低比特率
+            if compressed_size > max_size:
+                logger.warning(f"Compressed file still too large, trying lower bitrate...")
+                compressed_path2 = audio_path.rsplit('.', 1)[0] + '_compressed2.mp3'
+                cmd2 = [
+                    'ffmpeg', '-y',
+                    '-i', audio_path,
+                    '-acodec', 'libmp3lame',
+                    '-ac', '1',
+                    '-ar', '16000',
+                    '-b:a', '16000',  # 16kbps
+                    compressed_path2
+                ]
+                subprocess.run(cmd2, check=True, capture_output=True, timeout=120)
+                compressed_size2 = os.path.getsize(compressed_path2)
+                logger.info(f"Second compression: {compressed_size2/1024/1024:.2f}MB")
+                compressed_path = compressed_path2
+                compressed_size = compressed_size2
+
+            return compressed_path
+
+        except Exception as e:
+            logger.error(f"Audio compression failed: {e}")
+            # 清理临时文件
+            for p in [compressed_path, compressed_path2] if 'compressed_path2' in dir() else [compressed_path]:
+                try:
+                    if os.path.exists(p):
+                        os.remove(p)
+                except:
+                    pass
+            raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，压缩失败: {e}")

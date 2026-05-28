@@ -63,9 +63,9 @@ def transcribe_audio_task(self, task_id: int, audio_path: str, provider: str, co
 
         self.update_state(state="PROCESSING", meta={"progress": 30})
 
-        # 转换音频格式
-        logger.info(f"Converting audio to WAV")
-        converted_path = service.convert_to_wav(audio_path)
+        # 压缩音频文件以适应 ASR 接口限制
+        logger.info(f"Compressing audio for ASR")
+        converted_path = service.convert_for_asr(audio_path, max_size_mb=2)
         self.update_state(state="PROCESSING", meta={"progress": 50})
 
         # 执行转写

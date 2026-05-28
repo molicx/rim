@@ -44,28 +44,10 @@ class AliyunASR(ASRProvider):
         file_size = os.path.getsize(audio_path)
         max_size = 2 * 1024 * 1024  # 2MB
 
-        if file_size > max_size:
-            logger.warning(f"Audio file too large: {file_size / 1024 / 1024:.2f}MB > 2MB, compressing...")
-            # 使用 ffmpeg 压缩音频
-            compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
-            import subprocess
-            cmd = [
-                'ffmpeg', '-y',
-                '-i', audio_path,
-                '-acodec', 'libmp3lame',
-                '-ac', '1',
-                '-ar', '16000',
-                '-b:a', '64k',
-                compressed_path
-            ]
-            try:
-                subprocess.run(cmd, check=True, capture_output=True)
-                audio_path = compressed_path
-                file_size = os.path.getsize(audio_path)
-                logger.info(f"Audio compressed: {file_size / 1024 / 1024:.2f}MB")
-            except Exception as e:
-                logger.error(f"Audio compression failed: {e}")
-                raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，压缩失败: {e}")
+        # 注意：音频压缩已在 convert_for_asr 中处理
+        # 这里直接读取文件并发送
+        file_size = os.path.getsize(audio_path)
+        logger.info(f"Sending audio to Aliyun ASR: {audio_path}, size={file_size/1024/1024:.2f}MB")
 
         # 读取音频文件
         with open(audio_path, 'rb') as f:
@@ -118,6 +100,23 @@ class AliyunASR(ASRProvider):
         except Exception as e:
             logger.error(f"Aliyun ASR request failed: {e}", exc_info=True)
             raise
+
+    def _get_audio_duration(self, audio_path: str) -> float:
+        """获取音频时长（秒）"""
+        import subprocess
+        try:
+            cmd = [
+                'ffprobe', '-v', 'quiet',
+                '-show_entries', 'format=duration',
+                '-of', 'csv=p=0',
+                audio_path
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            if result.returncode == 0:
+                return float(result.stdout.strip())
+        except Exception as e:
+            logger.warning(f"Failed to get audio duration: {e}")
+        return 0
 
     def _generate_token(self) -> str:
         """生成访问令牌（简化版，实际应该使用阿里云 SDK）"""
