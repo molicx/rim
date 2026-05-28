@@ -80,97 +80,54 @@ class TranscriptionService:
 
     def convert_for_asr(self, audio_path: str, max_size_mb: int = 2) -> str:
         """
-        压缩音频文件以适应 ASR 接口大小限制
+        预处理音频文件：格式标准化（单声道 16kHz MP3）
+        注意：对于超过 max_size_mb 的文件，不再整体压缩，
+        而是交由 ASR 适配器分段处理，每段独立压缩。
         :param audio_path: 原始音频文件路径
-        :param max_size_mb: 最大文件大小（MB）
-        :return: 压缩后的文件路径
+        :param max_size_mb: 最大文件大小（MB），超过则仅做格式转换
+        :return: 处理后的文件路径
         """
         import subprocess
 
         file_size = os.path.getsize(audio_path)
-        max_size = max_size_mb * 1024 * 1024
-
-        if file_size <= max_size:
-            logger.info(f"Audio file size OK: {file_size/1024/1024:.2f}MB <= {max_size_mb}MB")
-            return audio_path
-
-        logger.info(f"Audio file too large: {file_size/1024/1024:.2f}MB > {max_size_mb}MB, compressing...")
-
-        # 获取音频时长
-        duration = self.get_audio_duration(audio_path)
-        logger.info(f"Audio duration: {duration:.1f}s")
-
-        # 计算目标比特率
-        if duration > 0:
-            target_bitrate = int((max_size * 8) / duration * 0.85)  # 留 15% 余量
-            target_bitrate = max(target_bitrate, 8000)   # 最低 8kbps
-            target_bitrate = min(target_bitrate, 128000)  # 最高 128kbps
-        else:
-            target_bitrate = 32000
-
-        logger.info(f"Target bitrate: {target_bitrate}bps")
-
-        # 压缩音频
-        compressed_path = audio_path.rsplit('.', 1)[0] + '_compressed.mp3'
-        cmd = [
-            'ffmpeg', '-y',
-            '-i', audio_path,
-            '-acodec', 'libmp3lame',
-            '-ac', '1',
-            '-ar', '16000',
-            '-b:a', f'{target_bitrate}',
-            compressed_path
-        ]
+        logger.info(f"Audio file size: {file_size/1024/1024:.2f}MB")
 
         # 检查 ffmpeg 是否可用
         try:
             subprocess.run(['ffmpeg', '-version'], capture_output=True, timeout=5)
         except FileNotFoundError:
             logger.error("ffmpeg not installed")
-            raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，但 ffmpeg 未安装，无法压缩")
-        except Exception as e:
-            logger.warning(f"ffmpeg check failed: {e}")
+            raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，但 ffmpeg 未安装")
+        except Exception:
+            pass
+
+        # 如果文件超过限制，只做格式转换（单声道 16kHz），不压缩
+        # 分段压缩由 ASR 适配器处理
+        converted_path = audio_path.rsplit('.', 1)[0] + '_converted.mp3'
+        cmd = [
+            'ffmpeg', '-y',
+            '-i', audio_path,
+            '-acodec', 'libmp3lame',
+            '-ac', '1',
+            '-ar', '16000',
+            '-b:a', '64k',
+            converted_path
+        ]
 
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
-                logger.error(f"ffmpeg error: {result.stderr[:500]}")
-                raise Exception(f"ffmpeg failed: {result.stderr[:200]}")
+                logger.warning(f"ffmpeg conversion warning: {result.stderr[:300]}")
+                # 转换失败时返回原文件
+                return audio_path
 
-            if not os.path.exists(compressed_path):
-                raise Exception("Compressed file not created")
+            if not os.path.exists(converted_path):
+                return audio_path
 
-            compressed_size = os.path.getsize(compressed_path)
-            logger.info(f"Audio compressed: {file_size/1024/1024:.2f}MB -> {compressed_size/1024/1024:.2f}MB")
-
-            # 如果压缩后仍然太大，尝试更低比特率
-            if compressed_size > max_size:
-                logger.warning(f"Compressed file still too large ({compressed_size/1024/1024:.2f}MB), trying lower bitrate...")
-                compressed_path2 = audio_path.rsplit('.', 1)[0] + '_compressed2.mp3'
-                cmd2 = [
-                    'ffmpeg', '-y',
-                    '-i', audio_path,
-                    '-acodec', 'libmp3lame',
-                    '-ac', '1',
-                    '-ar', '16000',
-                    '-b:a', '16000',  # 16kbps
-                    compressed_path2
-                ]
-                subprocess.run(cmd2, check=True, capture_output=True, timeout=120)
-                compressed_size2 = os.path.getsize(compressed_path2)
-                logger.info(f"Second compression: {compressed_size2/1024/1024:.2f}MB")
-                compressed_path = compressed_path2
-                compressed_size = compressed_size2
-
-            return compressed_path
+            converted_size = os.path.getsize(converted_path)
+            logger.info(f"Audio converted: {file_size/1024/1024:.2f}MB -> {converted_size/1024/1024:.2f}MB")
+            return converted_path
 
         except Exception as e:
-            logger.error(f"Audio compression failed: {e}")
-            # 清理临时文件
-            for p in [compressed_path, compressed_path2] if 'compressed_path2' in dir() else [compressed_path]:
-                try:
-                    if os.path.exists(p):
-                        os.remove(p)
-                except:
-                    pass
-            raise ValueError(f"音频文件过大({file_size/1024/1024:.1f}MB)，压缩失败: {e}")
+            logger.warning(f"Audio conversion failed: {e}, using original file")
+            return audio_path

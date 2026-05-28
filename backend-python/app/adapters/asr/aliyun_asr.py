@@ -76,12 +76,16 @@ class AliyunASR(ASRProvider):
         duration = self._get_audio_duration(audio_path)
         logger.info(f"Aliyun ASR: {audio_path}, size={file_size/1024/1024:.2f}MB, duration={duration:.1f}s")
 
+        # 如果获取时长失败（0），默认使用分段模式（安全降级）
         max_duration = 180  # 3 分钟一段
-        if duration <= max_duration:
+        if duration > 0 and duration <= max_duration:
+            logger.info(f"Audio <= {max_duration}s, using single request")
             return await self._transcribe_single(audio_path)
         else:
-            logger.info(f"Audio too long ({duration:.1f}s), splitting into {max_duration}s chunks")
-            return await self._transcribe_chunked(audio_path, duration, max_duration)
+            # 时长未知或超长，使用分段模式
+            effective_duration = duration if duration > 0 else (file_size / (64000 / 8))  # 按 64kbps 估算
+            logger.info(f"Audio > {max_duration}s or unknown duration ({duration}s), using chunked mode, estimated={effective_duration:.1f}s")
+            return await self._transcribe_chunked(audio_path, effective_duration, max_duration)
 
     async def _transcribe_single(self, audio_path: str) -> TranscriptionResult:
         """转写单个音频文件"""
@@ -149,23 +153,34 @@ class AliyunASR(ASRProvider):
         chunk_idx = 0
         total_chunks = int(duration / chunk_duration) + 1
 
+        logger.info(f"Splitting {duration:.1f}s audio into {total_chunks} chunks of {chunk_duration:.0f}s each")
+
         with tempfile.TemporaryDirectory() as tmpdir:
             while offset < duration:
                 chunk_path = os.path.join(tmpdir, f"chunk_{chunk_idx}.mp3")
+                # 3分钟 64kbps ≈ 1.4MB，安全地在 2MB 限制内
                 cmd = [
                     'ffmpeg', '-y', '-i', audio_path,
                     '-ss', str(offset), '-t', str(chunk_duration),
-                    '-ar', '16000', '-ac', '1', '-b:a', '16k',
+                    '-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000',
+                    '-b:a', '64k',
                     chunk_path
                 ]
-                result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-                if result.returncode != 0:
-                    logger.error(f"ffmpeg split failed: {result.stderr}")
+                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if proc.returncode != 0:
+                    logger.error(f"ffmpeg chunk split failed at offset {offset}s: {proc.stderr[:300]}")
                     offset += chunk_duration
                     chunk_idx += 1
                     continue
 
-                logger.info(f"Transcribing chunk {chunk_idx+1}/{total_chunks}, offset={offset:.1f}s")
+                if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) == 0:
+                    logger.warning(f"Chunk {chunk_idx+1} is empty, skipping")
+                    offset += chunk_duration
+                    chunk_idx += 1
+                    continue
+
+                chunk_size = os.path.getsize(chunk_path)
+                logger.info(f"Transcribing chunk {chunk_idx+1}/{total_chunks}, offset={offset:.1f}s, size={chunk_size/1024:.0f}KB")
                 chunk_result = await self._transcribe_single(chunk_path)
 
                 if chunk_result.text:
@@ -177,9 +192,11 @@ class AliyunASR(ASRProvider):
                             text=seg.text
                         ))
 
+                logger.info(f"Chunk {chunk_idx+1}/{total_chunks} done, got {len(chunk_result.text)} chars")
                 offset += chunk_duration
                 chunk_idx += 1
 
+        logger.info(f"All {chunk_idx} chunks done, total text: {len(all_text)} chars, {len(all_segments)} segments")
         return TranscriptionResult(
             text=''.join(all_text),
             segments=all_segments,
@@ -188,7 +205,7 @@ class AliyunASR(ASRProvider):
         )
 
     def _get_audio_duration(self, audio_path: str) -> float:
-        """获取音频时长（秒）"""
+        """获取音频时长（秒），ffprobe 失败时用 ffmpeg 回退"""
         import subprocess
         try:
             cmd = [
@@ -197,9 +214,29 @@ class AliyunASR(ASRProvider):
                 '-of', 'csv=p=0',
                 audio_path
             ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             if result.returncode == 0:
-                return float(result.stdout.strip())
+                d = float(result.stdout.strip())
+                if d > 0:
+                    return d
         except Exception as e:
-            logger.warning(f"Failed to get audio duration: {e}")
+            logger.warning(f"ffprobe failed: {e}, trying ffmpeg fallback")
+
+        try:
+            cmd = [
+                'ffmpeg', '-i', audio_path,
+                '-f', 'null', '-'
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+            # ffmpeg 输出到 stderr
+            for line in result.stderr.split('\n'):
+                if 'Duration' in line:
+                    # 提取 HH:MM:SS.ss
+                    import re
+                    m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', line)
+                    if m:
+                        h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
+                        return h * 3600 + mi * 60 + s
+        except Exception as e:
+            logger.warning(f"ffmpeg fallback also failed: {e}")
         return 0
