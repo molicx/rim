@@ -3,14 +3,14 @@
 文档: https://help.aliyun.com/zh/isi/developer-reference/api-nls-cloud-gateway
 """
 import asyncio
-import hashlib
-import hmac
 import json
 import os
 import time
 from typing import Dict, Optional
 
 import httpx
+from aliyunsdkcore.client import AcsClient
+from aliyunsdkcore.request import CommonRequest
 
 from . import ASRProvider, TranscriptionResult, TranscriptionSegment
 
@@ -28,6 +28,13 @@ class AliyunASR(ASRProvider):
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
         self.base_url = f"https://nls-gateway.{self.region}.aliyuncs.com/stream/v1/asr"
+        self._token = None
+        self._token_expire = 0
+        self._client = AcsClient(
+            self.access_key_id,
+            self.access_key_secret,
+            self.region
+        )
 
     def validate_config(self, config: Dict) -> bool:
         return bool(
@@ -36,28 +43,46 @@ class AliyunASR(ASRProvider):
             config.get('app_key')
         )
 
+    def _get_token(self) -> str:
+        """使用阿里云 SDK 获取 token，带缓存"""
+        now = time.time()
+        if self._token and now < self._token_expire:
+            return self._token
+
+        request = CommonRequest()
+        request.set_method('POST')
+        request.set_domain('nls-meta.' + self.region + '.aliyuncs.com')
+        request.set_version('2019-02-28')
+        request.set_action_name('CreateToken')
+
+        try:
+            response = self._client.do_action_with_exception(request)
+            result = json.loads(response)
+            token_info = result.get('Token', {})
+            self._token = token_info.get('Id', '')
+            expire_time = token_info.get('ExpireTime', 0)
+            # 提前 5 分钟刷新
+            self._token_expire = expire_time - 300
+            logger.info(f"Got Aliyun ASR token, expires at {expire_time}")
+            return self._token
+        except Exception as e:
+            logger.error(f"Failed to get Aliyun token: {e}", exc_info=True)
+            raise
+
     async def transcribe(self, audio_path: str, options: Dict = None) -> TranscriptionResult:
         """转写音频文件"""
         options = options or {}
 
-        # 检查文件大小，阿里云 ASR 限制 2MB
-        file_size = os.path.getsize(audio_path)
-        max_size = 2 * 1024 * 1024  # 2MB
-
-        # 注意：音频压缩已在 convert_for_asr 中处理
-        # 这里直接读取文件并发送
         file_size = os.path.getsize(audio_path)
         logger.info(f"Sending audio to Aliyun ASR: {audio_path}, size={file_size/1024/1024:.2f}MB")
 
-        # 读取音频文件
         with open(audio_path, 'rb') as f:
             audio_data = f.read()
 
-        # 构建请求 URL
         url = f"{self.base_url}?appkey={self.app_key}&format=mp3&sample_rate=16000"
 
         headers = {
-            'X-NLS-Token': self._generate_token(),
+            'X-NLS-Token': self._get_token(),
             'Content-Type': 'audio/mp3'
         }
 
@@ -82,8 +107,19 @@ class AliyunASR(ASRProvider):
                     raise Exception(f"Invalid JSON response (status={response.status_code}): {response_text[:200]}")
 
                 if result.get('status') != 20000000:
-                    logger.error(f"Aliyun ASR error: {result}")
-                    raise Exception(f"ASR failed: {result.get('message', 'Unknown error')}")
+                    # token 过期，清除缓存重试一次
+                    if result.get('status') == 40000001:
+                        logger.warning("Aliyun token expired, refreshing and retrying...")
+                        self._token = None
+                        self._token_expire = 0
+                        headers['X-NLS-Token'] = self._get_token()
+                        response = await client.post(url, content=audio_data, headers=headers)
+                        result = response.json()
+                        if result.get('status') != 20000000:
+                            raise Exception(f"ASR retry failed: {result.get('message', 'Unknown error')}")
+                    else:
+                        logger.error(f"Aliyun ASR error: {result}")
+                        raise Exception(f"ASR failed: {result.get('message', 'Unknown error')}")
 
                 text = result.get('result', '')
 
@@ -117,16 +153,3 @@ class AliyunASR(ASRProvider):
         except Exception as e:
             logger.warning(f"Failed to get audio duration: {e}")
         return 0
-
-    def _generate_token(self) -> str:
-        """生成访问令牌（简化版，实际应该使用阿里云 SDK）"""
-        # 实际使用时应该使用 aliyun-python-sdk-core 生成 token
-        import hashlib
-        timestamp = str(int(time.time()))
-        sign_str = f"{self.access_key_id}{timestamp}"
-        signature = hmac.new(
-            self.access_key_secret.encode(),
-            sign_str.encode(),
-            hashlib.sha256
-        ).hexdigest()
-        return f"{timestamp}:{signature}"
