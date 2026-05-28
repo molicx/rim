@@ -80,9 +80,20 @@ class AliyunASR(ASRProvider):
         }
 
         try:
-            async with httpx.AsyncClient() as client:
-                response = await client.post(url, content=audio_data, headers=headers, timeout=120.0)
-                result = response.json()
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                logger.info(f"Calling Aliyun ASR: url={url}, file_size={len(audio_data)}")
+                response = await client.post(url, content=audio_data, headers=headers)
+
+                logger.info(f"Aliyun ASR response: status={response.status_code}, body={response.text[:500]}")
+
+                if response.status_code != 200:
+                    raise Exception(f"HTTP error: {response.status_code}, body={response.text[:200]}")
+
+                try:
+                    result = response.json()
+                except Exception as json_err:
+                    logger.error(f"Failed to parse JSON response: {json_err}, body={response.text[:500]}")
+                    raise Exception(f"Invalid JSON response: {response.text[:200]}")
 
                 if result.get('status') != 20000000:
                     logger.error(f"Aliyun ASR error: {result}")
@@ -101,7 +112,7 @@ class AliyunASR(ASRProvider):
                     language="zh"
                 )
         except Exception as e:
-            logger.error(f"Aliyun ASR request failed: {e}")
+            logger.error(f"Aliyun ASR request failed: {e}", exc_info=True)
             raise
 
     def _generate_token(self) -> str:
