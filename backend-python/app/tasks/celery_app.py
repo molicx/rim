@@ -38,3 +38,8 @@ celery_app.conf.task_routes = {
 # 必须在 celery_app 创建之后导入
 from . import ai_tasks  # noqa: F401
 from . import audio_tasks  # noqa: F401
+
+# 打印已注册的任务（调试用）
+import logging
+logger = logging.getLogger(__name__)
+logger.info(f"Celery registered tasks: {list(celery_app.tasks.keys())}")
