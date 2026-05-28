@@ -1,10 +1,11 @@
 """
 阿里云智能语音交互 ASR 适配器
-文档: https://help.aliyun.com/zh/isi/developer-reference/api-nls-cloud-gateway
+使用录音文件识别接口（异步），支持长音频
 """
 import json
 import os
 import time
+import uuid
 from typing import Dict, Optional
 
 import httpx
@@ -19,14 +20,13 @@ logger = logging.getLogger(__name__)
 
 
 class AliyunASR(ASRProvider):
-    """阿里云语音识别适配器"""
+    """阿里云语音识别适配器（录音文件识别）"""
 
     def __init__(self, config: Dict):
         self.access_key_id = config.get('access_key_id', '')
         self.access_key_secret = config.get('access_key_secret', '')
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
-        self.base_url = f"https://nls-gateway.{self.region}.aliyuncs.com/stream/v1/asr"
         self._token = None
         self._token_expire = 0
         self._client = AcsClient(
@@ -34,6 +34,10 @@ class AliyunASR(ASRProvider):
             self.access_key_secret,
             self.region
         )
+        # OSS 配置（从环境变量读取）
+        self.oss_bucket = os.getenv('OSS_BUCKET', '')
+        self.oss_endpoint = os.getenv('OSS_ENDPOINT', f'oss-{self.region}.aliyuncs.com')
+        self.oss_region = os.getenv('OSS_REGION', self.region)
 
     def validate_config(self, config: Dict) -> bool:
         return bool(
@@ -67,187 +71,142 @@ class AliyunASR(ASRProvider):
             logger.error(f"Failed to get Aliyun token: {e}", exc_info=True)
             raise
 
+    def _upload_to_oss(self, audio_path: str) -> str:
+        """上传音频文件到 OSS，返回临时 URL"""
+        try:
+            import oss2
+        except ImportError:
+            raise ImportError("oss2 is required for file transcription. Install: pip install oss2")
+
+        auth = oss2.Auth(self.access_key_id, self.access_key_secret)
+        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
+
+        object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
+        logger.info(f"Uploading {audio_path} to oss://{self.oss_bucket}/{object_key}")
+
+        bucket.put_object_from_file(object_key, audio_path)
+
+        # 生成临时访问 URL（有效期 1 小时）
+        url = bucket.sign_url('GET', object_key, 3600)
+        logger.info(f"OSS upload done, url={url[:100]}...")
+        return url, object_key
+
+    def _cleanup_oss(self, object_key: str):
+        """清理 OSS 临时文件"""
+        try:
+            import oss2
+            auth = oss2.Auth(self.access_key_id, self.access_key_secret)
+            bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
+            bucket.delete_object(object_key)
+            logger.info(f"Deleted oss://{self.oss_bucket}/{object_key}")
+        except Exception as e:
+            logger.warning(f"Failed to cleanup OSS file: {e}")
+
     async def transcribe(self, audio_path: str, options: Dict = None) -> TranscriptionResult:
-        """转写音频文件，超长音频自动分段"""
+        """转写音频文件（录音文件识别，异步接口）"""
         options = options or {}
 
         file_size = os.path.getsize(audio_path)
-        duration = self._get_audio_duration(audio_path)
-        logger.info(f"Aliyun ASR: {audio_path}, size={file_size/1024/1024:.2f}MB, duration={duration:.1f}s")
+        logger.info(f"Aliyun ASR file transcription: {audio_path}, size={file_size/1024/1024:.2f}MB")
 
-        # 如果获取时长失败（0），默认使用分段模式（安全降级）
-        max_duration = 15  # 15 秒一段（阿里云一句话识别 ASR 限制）
-        if duration > 0 and duration <= max_duration:
-            logger.info(f"Audio <= {max_duration}s, using single request")
-            return await self._transcribe_single(audio_path)
-        else:
-            # 时长未知或超长，使用分段模式
-            effective_duration = duration if duration > 0 else (file_size / (64000 / 8))  # 按 64kbps 估算
-            logger.info(f"Audio > {max_duration}s or unknown duration ({duration}s), using chunked mode, estimated={effective_duration:.1f}s")
-            return await self._transcribe_chunked(audio_path, effective_duration, max_duration)
+        # 1. 上传音频到 OSS
+        oss_url, object_key = self._upload_to_oss(audio_path)
 
-    async def _transcribe_single(self, audio_path: str) -> TranscriptionResult:
-        """转写单个音频文件"""
-        with open(audio_path, 'rb') as f:
-            audio_data = f.read()
+        try:
+            # 2. 提交识别任务
+            task_id = await self._submit_task(oss_url)
+            logger.info(f"ASR task submitted: task_id={task_id}")
 
-        url = f"{self.base_url}?appkey={self.app_key}&format=mp3&sample_rate=16000"
+            # 3. 轮询识别结果
+            result = await self._poll_result(task_id)
+            logger.info(f"ASR task completed: text_length={len(result.text)}")
+
+            return result
+        finally:
+            # 4. 清理 OSS 临时文件
+            self._cleanup_oss(object_key)
+
+    async def _submit_task(self, audio_url: str) -> str:
+        """提交录音文件识别任务"""
+        url = f"https://nls-gateway.{self.region}.aliyuncs.com/rest/v1/asr/submit"
 
         headers = {
             'X-NLS-Token': self._get_token(),
-            'Content-Type': 'audio/mp3'
+            'Content-Type': 'application/json'
         }
 
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                logger.info(f"Calling Aliyun ASR: file_size={len(audio_data)}")
-                response = await client.post(url, content=audio_data, headers=headers)
+        payload = {
+            'appkey': self.app_key,
+            'audio_url': audio_url,
+            'format': 'mp3',
+            'sample_rate': 16000,
+            'enable_intermediate_result': False,
+            'enable_punctuation_prediction': True,
+            'enable_inverse_text_normalization': True
+        }
 
-                logger.info(f"Aliyun ASR response: status={response.status_code}, body={response.text[:500]}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(url, json=payload, headers=headers)
+            logger.info(f"Submit response: status={response.status_code}, body={response.text[:500]}")
+
+            if response.status_code != 200:
+                raise Exception(f"Submit failed: {response.status_code}, body={response.text[:200]}")
+
+            result = response.json()
+            if result.get('status') != 20000000:
+                raise Exception(f"Submit failed: {result.get('message', 'Unknown error')}")
+
+            return result['data']['task_id']
+
+    async def _poll_result(self, task_id: str, max_wait: int = 600, interval: int = 5) -> TranscriptionResult:
+        """轮询识别结果"""
+        url = f"https://nls-gateway.{self.region}.aliyuncs.com/rest/v1/asr/query"
+
+        headers = {
+            'X-NLS-Token': self._get_token(),
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'appkey': self.app_key,
+            'task_id': task_id
+        }
+
+        start_time = time.time()
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            while time.time() - start_time < max_wait:
+                response = await client.post(url, json=payload, headers=headers)
+                logger.info(f"Poll response: status={response.status_code}, body={response.text[:500]}")
 
                 if response.status_code != 200:
-                    raise Exception(f"HTTP error: {response.status_code}, body={response.text[:200]}")
+                    raise Exception(f"Poll failed: {response.status_code}")
 
-                try:
-                    result = response.json()
-                except Exception as json_err:
-                    response_text = response.text
-                    logger.error(f"Failed to parse JSON response: {json_err}")
-                    raise Exception(f"Invalid JSON response: {response_text[:200]}")
+                result = response.json()
+                status = result.get('status')
 
-                if result.get('status') != 20000000:
-                    if result.get('status') == 40000001:
-                        logger.warning("Aliyun token expired, refreshing and retrying...")
-                        self._token = None
-                        self._token_expire = 0
-                        headers['X-NLS-Token'] = self._get_token()
-                        response = await client.post(url, content=audio_data, headers=headers)
-                        result = response.json()
-                        if result.get('status') != 20000000:
-                            raise Exception(f"ASR retry failed: {result.get('message', 'Unknown error')}")
+                if status == 20000000:
+                    data = result.get('data', {})
+                    task_status = data.get('status')
+
+                    if task_status == 'SUCCESS':
+                        text = data.get('result', '')
+                        duration = data.get('duration', 0) / 1000
+                        return TranscriptionResult(
+                            text=text,
+                            segments=[TranscriptionSegment(start=0, end=duration, text=text)],
+                            duration=duration,
+                            language="zh"
+                        )
+                    elif task_status == 'FAILED':
+                        raise Exception(f"ASR task failed: {data.get('message', 'Unknown error')}")
                     else:
-                        raise Exception(f"ASR failed: {result.get('message', 'Unknown error')}")
+                        logger.info(f"Task status: {task_status}, waiting...")
+                else:
+                    logger.warning(f"Poll status: {status}, message: {result.get('message')}")
 
-                text = result.get('result', '')
-                seg_duration = result.get('duration', 0) / 1000
+                await asyncio.sleep(interval)
 
-                return TranscriptionResult(
-                    text=text,
-                    segments=[TranscriptionSegment(start=0, end=seg_duration, text=text)],
-                    duration=seg_duration,
-                    language="zh"
-                )
-        except Exception as e:
-            logger.error(f"Aliyun ASR request failed: {e}", exc_info=True)
-            raise
+            raise TimeoutError(f"ASR task timeout after {max_wait}s")
 
-    async def _transcribe_chunked(self, audio_path: str, duration: float, chunk_duration: float) -> TranscriptionResult:
-        """分段转写长音频"""
-        import subprocess
-        import tempfile
 
-        all_text = []
-        all_segments = []
-        offset = 0.0
-        chunk_idx = 0
-        total_chunks = int(duration / chunk_duration) + 1
-        failed_chunks = []
-
-        logger.info(f"Splitting {duration:.1f}s audio into {total_chunks} chunks of {chunk_duration:.0f}s each")
-
-        with tempfile.TemporaryDirectory() as tmpdir:
-            while offset < duration:
-                chunk_path = os.path.join(tmpdir, f"chunk_{chunk_idx}.mp3")
-                # 15秒 128kbps ≈ 240KB，安全地在 2MB 限制内
-                cmd = [
-                    'ffmpeg', '-y', '-i', audio_path,
-                    '-ss', str(offset), '-t', str(chunk_duration),
-                    '-acodec', 'libmp3lame', '-ac', '1', '-ar', '16000',
-                    '-b:a', '128k',
-                    chunk_path
-                ]
-                proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-                if proc.returncode != 0:
-                    logger.error(f"ffmpeg chunk split failed at offset {offset}s: {proc.stderr[:300]}")
-                    failed_chunks.append(chunk_idx + 1)
-                    offset += chunk_duration
-                    chunk_idx += 1
-                    continue
-
-                if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) == 0:
-                    logger.warning(f"Chunk {chunk_idx+1} is empty, skipping")
-                    failed_chunks.append(chunk_idx + 1)
-                    offset += chunk_duration
-                    chunk_idx += 1
-                    continue
-
-                chunk_size = os.path.getsize(chunk_path)
-                logger.info(f"Transcribing chunk {chunk_idx+1}/{total_chunks}, offset={offset:.1f}s, size={chunk_size/1024:.0f}KB")
-
-                try:
-                    chunk_result = await self._transcribe_single(chunk_path)
-                    if chunk_result.text:
-                        all_text.append(chunk_result.text)
-                        for seg in chunk_result.segments:
-                            all_segments.append(TranscriptionSegment(
-                                start=seg.start + offset,
-                                end=seg.end + offset,
-                                text=seg.text
-                            ))
-                    logger.info(f"Chunk {chunk_idx+1}/{total_chunks} done, got {len(chunk_result.text)} chars")
-                except Exception as e:
-                    logger.error(f"Chunk {chunk_idx+1}/{total_chunks} failed: {e}")
-                    failed_chunks.append(chunk_idx + 1)
-
-                offset += chunk_duration
-                chunk_idx += 1
-
-        if failed_chunks:
-            logger.warning(f"Failed chunks: {failed_chunks}")
-        if not all_text:
-            raise Exception("All chunks failed, no transcription result")
-
-        logger.info(f"All {chunk_idx} chunks done, failed={len(failed_chunks)}, total text: {len(''.join(all_text))} chars, {len(all_segments)} segments")
-        return TranscriptionResult(
-            text=''.join(all_text),
-            segments=all_segments,
-            duration=duration,
-            language="zh"
-        )
-
-    def _get_audio_duration(self, audio_path: str) -> float:
-        """获取音频时长（秒），ffprobe 失败时用 ffmpeg 回退"""
-        import subprocess
-        try:
-            cmd = [
-                'ffprobe', '-v', 'quiet',
-                '-show_entries', 'format=duration',
-                '-of', 'csv=p=0',
-                audio_path
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            if result.returncode == 0:
-                d = float(result.stdout.strip())
-                if d > 0:
-                    return d
-        except Exception as e:
-            logger.warning(f"ffprobe failed: {e}, trying ffmpeg fallback")
-
-        try:
-            cmd = [
-                'ffmpeg', '-i', audio_path,
-                '-f', 'null', '-'
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
-            # ffmpeg 输出到 stderr
-            for line in result.stderr.split('\n'):
-                if 'Duration' in line:
-                    # 提取 HH:MM:SS.ss
-                    import re
-                    m = re.search(r'Duration:\s*(\d+):(\d+):(\d+\.\d+)', line)
-                    if m:
-                        h, mi, s = int(m.group(1)), int(m.group(2)), float(m.group(3))
-                        return h * 3600 + mi * 60 + s
-        except Exception as e:
-            logger.warning(f"ffmpeg fallback also failed: {e}")
-        return 0
+import asyncio
