@@ -81,16 +81,21 @@ class TranscriptionService:
     def convert_for_asr(self, audio_path: str, max_size_mb: int = 2) -> str:
         """
         预处理音频文件：格式标准化（单声道 16kHz MP3）
-        注意：对于超过 max_size_mb 的文件，不再整体压缩，
-        而是交由 ASR 适配器分段处理，每段独立压缩。
+        对于超过 max_size_mb 的文件，不做整体压缩，交由 ASR 适配器分段处理。
         :param audio_path: 原始音频文件路径
-        :param max_size_mb: 最大文件大小（MB），超过则仅做格式转换
+        :param max_size_mb: 最大文件大小（MB）
         :return: 处理后的文件路径
         """
         import subprocess
 
         file_size = os.path.getsize(audio_path)
+        max_size = max_size_mb * 1024 * 1024
         logger.info(f"Audio file size: {file_size/1024/1024:.2f}MB")
+
+        # 小文件直接返回，无需转换
+        if file_size <= max_size:
+            logger.info(f"Audio file within limit ({max_size_mb}MB), skip conversion")
+            return audio_path
 
         # 检查 ffmpeg 是否可用
         try:
@@ -101,7 +106,7 @@ class TranscriptionService:
         except Exception:
             pass
 
-        # 如果文件超过限制，只做格式转换（单声道 16kHz），不压缩
+        # 大文件仅做格式转换（单声道 16kHz），不压缩到 2MB
         # 分段压缩由 ASR 适配器处理
         converted_path = audio_path.rsplit('.', 1)[0] + '_converted.mp3'
         cmd = [
@@ -118,7 +123,6 @@ class TranscriptionService:
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
             if result.returncode != 0:
                 logger.warning(f"ffmpeg conversion warning: {result.stderr[:300]}")
-                # 转换失败时返回原文件
                 return audio_path
 
             if not os.path.exists(converted_path):

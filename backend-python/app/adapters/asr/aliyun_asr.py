@@ -2,7 +2,6 @@
 阿里云智能语音交互 ASR 适配器
 文档: https://help.aliyun.com/zh/isi/developer-reference/api-nls-cloud-gateway
 """
-import asyncio
 import json
 import os
 import time
@@ -152,6 +151,7 @@ class AliyunASR(ASRProvider):
         offset = 0.0
         chunk_idx = 0
         total_chunks = int(duration / chunk_duration) + 1
+        failed_chunks = []
 
         logger.info(f"Splitting {duration:.1f}s audio into {total_chunks} chunks of {chunk_duration:.0f}s each")
 
@@ -169,34 +169,45 @@ class AliyunASR(ASRProvider):
                 proc = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if proc.returncode != 0:
                     logger.error(f"ffmpeg chunk split failed at offset {offset}s: {proc.stderr[:300]}")
+                    failed_chunks.append(chunk_idx + 1)
                     offset += chunk_duration
                     chunk_idx += 1
                     continue
 
                 if not os.path.exists(chunk_path) or os.path.getsize(chunk_path) == 0:
                     logger.warning(f"Chunk {chunk_idx+1} is empty, skipping")
+                    failed_chunks.append(chunk_idx + 1)
                     offset += chunk_duration
                     chunk_idx += 1
                     continue
 
                 chunk_size = os.path.getsize(chunk_path)
                 logger.info(f"Transcribing chunk {chunk_idx+1}/{total_chunks}, offset={offset:.1f}s, size={chunk_size/1024:.0f}KB")
-                chunk_result = await self._transcribe_single(chunk_path)
 
-                if chunk_result.text:
-                    all_text.append(chunk_result.text)
-                    for seg in chunk_result.segments:
-                        all_segments.append(TranscriptionSegment(
-                            start=seg.start + offset,
-                            end=seg.end + offset,
-                            text=seg.text
-                        ))
+                try:
+                    chunk_result = await self._transcribe_single(chunk_path)
+                    if chunk_result.text:
+                        all_text.append(chunk_result.text)
+                        for seg in chunk_result.segments:
+                            all_segments.append(TranscriptionSegment(
+                                start=seg.start + offset,
+                                end=seg.end + offset,
+                                text=seg.text
+                            ))
+                    logger.info(f"Chunk {chunk_idx+1}/{total_chunks} done, got {len(chunk_result.text)} chars")
+                except Exception as e:
+                    logger.error(f"Chunk {chunk_idx+1}/{total_chunks} failed: {e}")
+                    failed_chunks.append(chunk_idx + 1)
 
-                logger.info(f"Chunk {chunk_idx+1}/{total_chunks} done, got {len(chunk_result.text)} chars")
                 offset += chunk_duration
                 chunk_idx += 1
 
-        logger.info(f"All {chunk_idx} chunks done, total text: {len(all_text)} chars, {len(all_segments)} segments")
+        if failed_chunks:
+            logger.warning(f"Failed chunks: {failed_chunks}")
+        if not all_text:
+            raise Exception("All chunks failed, no transcription result")
+
+        logger.info(f"All {chunk_idx} chunks done, failed={len(failed_chunks)}, total text: {len(''.join(all_text))} chars, {len(all_segments)} segments")
         return TranscriptionResult(
             text=''.join(all_text),
             segments=all_segments,
