@@ -69,14 +69,18 @@ def transcribe_audio_task(self, task_id: int, audio_path: str, provider: str, co
         self.update_state(state="PROCESSING", meta={"progress": 50})
 
         # 执行转写
-        logger.info(f"Starting transcription with provider: {provider}")
+        logger.info(f"Starting transcription with provider: {provider}, config_keys={list(config.keys())}")
         loop = asyncio.new_event_loop()
-        result = loop.run_until_complete(
-            service.transcribe(converted_path, provider, config)
-        )
-        loop.close()
-
-        logger.info(f"Transcription completed: duration={result.duration:.1f}s, text_length={len(result.text)}")
+        try:
+            result = loop.run_until_complete(
+                service.transcribe(converted_path, provider, config)
+            )
+            logger.info(f"Transcription completed: duration={result.duration:.1f}s, text_length={len(result.text)}")
+        except Exception as transcribe_err:
+            logger.error(f"Transcription failed: {transcribe_err}", exc_info=True)
+            raise
+        finally:
+            loop.close()
 
         self.update_state(state="PROCESSING", meta={"progress": 90})
 

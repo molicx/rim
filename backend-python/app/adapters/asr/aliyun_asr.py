@@ -92,8 +92,12 @@ class AliyunASR(ASRProvider):
                 try:
                     result = response.json()
                 except Exception as json_err:
-                    logger.error(f"Failed to parse JSON response: {json_err}, body={response.text[:500]}")
-                    raise Exception(f"Invalid JSON response: {response.text[:200]}")
+                    response_text = response.text
+                    logger.error(f"Failed to parse JSON response: {json_err}")
+                    logger.error(f"Response status: {response.status_code}")
+                    logger.error(f"Response headers: {dict(response.headers)}")
+                    logger.error(f"Response body (first 1000 chars): {response_text[:1000]}")
+                    raise Exception(f"Invalid JSON response (status={response.status_code}): {response_text[:200]}")
 
                 if result.get('status') != 20000000:
                     logger.error(f"Aliyun ASR error: {result}")
