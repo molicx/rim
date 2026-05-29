@@ -70,14 +70,13 @@ class AliyunASR(ASRProvider):
         except ImportError:
             raise ImportError("oss2 is required. Install: pip install oss2")
 
-        # 使用公网 endpoint 上传
+        # 使用公网 endpoint 上传，设置超时 300 秒
         auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
-        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
+        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket, timeout=300)
         object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
         bucket.put_object_from_file(object_key, audio_path)
 
         # 生成带签名的临时访问 URL（有效期 1 小时）
-        # 使用 slash_safe=False 避免 / 被编码为 %2F
         url = bucket.sign_url('GET', object_key, 3600, slash_safe=False)
         logger.info(f"OSS upload done, signed url={url[:100]}...")
         return url, object_key
