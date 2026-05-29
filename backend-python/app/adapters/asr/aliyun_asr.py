@@ -77,7 +77,8 @@ class AliyunASR(ASRProvider):
         bucket.put_object_from_file(object_key, audio_path)
 
         # 生成带签名的临时访问 URL（有效期 1 小时）
-        url = bucket.sign_url('GET', object_key, 3600)
+        # 使用 slash_safe=False 避免 / 被编码为 %2F
+        url = bucket.sign_url('GET', object_key, 3600, slash_safe=False)
         logger.info(f"OSS upload done, signed url={url[:100]}...")
         return url, object_key
 
