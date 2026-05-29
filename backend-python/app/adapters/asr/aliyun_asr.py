@@ -27,8 +27,6 @@ class AliyunASR(ASRProvider):
         self.access_key_secret = config.get('access_key_secret', '')
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
-        self._token = None
-        self._token_expire = 0
         self._client = AcsClient(
             self.access_key_id,
             self.access_key_secret,
@@ -47,31 +45,6 @@ class AliyunASR(ASRProvider):
             config.get('access_key_secret') and
             config.get('app_key')
         )
-
-    def _get_token(self) -> str:
-        """使用阿里云 SDK 获取 token，带缓存"""
-        now = time.time()
-        if self._token and now < self._token_expire:
-            return self._token
-
-        request = CommonRequest()
-        request.set_method('POST')
-        request.set_domain('nls-meta.' + self.region + '.aliyuncs.com')
-        request.set_version('2019-02-28')
-        request.set_action_name('CreateToken')
-
-        try:
-            response = self._client.do_action_with_exception(request)
-            result = json.loads(response)
-            token_info = result.get('Token', {})
-            self._token = token_info.get('Id', '')
-            expire_time = token_info.get('ExpireTime', 0)
-            self._token_expire = expire_time - 300
-            logger.info(f"Got Aliyun ASR token, expires at {expire_time}")
-            return self._token
-        except Exception as e:
-            logger.error(f"Failed to get Aliyun token: {e}", exc_info=True)
-            raise
 
     def _upload_to_oss(self, audio_path: str) -> tuple:
         """上传音频文件到 OSS，返回 (临时 URL, object_key)"""
@@ -129,59 +102,66 @@ class AliyunASR(ASRProvider):
             self._cleanup_oss(object_key)
 
     async def _submit_task(self, audio_url: str) -> str:
-        """提交录音文件识别任务"""
+        """提交录音文件识别任务（使用阿里云 POP API）"""
         url = f"https://{self.filetrans_domain}/"
 
-        payload = {
-            'appkey': self.app_key,
-            'file_link': audio_url,
-            'enable_punctuation_prediction': True,
-            'enable_inverse_text_normalization': True,
-            'enable_sample_rate_adaptive': True,
+        # POP API 参数
+        params = {
+            'Action': 'SubmitTask',
+            'Version': '2018-08-17',
+            'Format': 'JSON',
+            'AccessKeyId': self.access_key_id,
+            'SignatureMethod': 'HMAC-SHA1',
+            'SignatureVersion': '1.0',
+            'SignatureNonce': uuid.uuid4().hex,
+            'Timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
+            # 业务参数
+            'AppKey': self.app_key,
+            'FileLink': audio_url,
+            'EnablePunctuationPrediction': 'true',
+            'EnableInverseTextNormalization': 'true',
+            'EnableSampleRateAdaptive': 'true',
         }
 
-        headers = {
-            'X-NLS-Token': self._get_token(),
-            'Content-Type': 'application/json'
-        }
+        # 使用 AcsClient 签名
+        request = CommonRequest()
+        request.set_method('POST')
+        request.set_domain(self.filetrans_domain)
+        request.set_version('2018-08-17')
+        request.set_action_name('SubmitTask')
+        request.set_query_params(params)
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload, headers=headers)
-            logger.info(f"Submit response: status={response.status_code}, body={response.text[:500]}")
+        try:
+            response = self._client.do_action_with_exception(request)
+            result = json.loads(response)
+            logger.info(f"Submit response: {json.dumps(result, ensure_ascii=False)[:500]}")
 
-            if response.status_code != 200:
-                raise Exception(f"Submit failed: {response.status_code}, body={response.text[:200]}")
-
-            result = response.json()
             status_code = result.get('StatusCode')
             if status_code != 21050000:
                 raise Exception(f"Submit failed: {result.get('StatusText', f'StatusCode={status_code}')}")
 
             return result['TaskId']
+        except Exception as e:
+            logger.error(f"Submit failed: {e}", exc_info=True)
+            raise
 
     async def _poll_result(self, task_id: str, max_wait: int = 600, interval: int = 5) -> TranscriptionResult:
         """轮询识别结果"""
-        url = f"https://{self.filetrans_domain}/"
-
-        headers = {
-            'X-NLS-Token': self._get_token(),
-            'Content-Type': 'application/json'
-        }
-
-        payload = {
-            'TaskId': task_id,
-        }
-
         start_time = time.time()
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            while time.time() - start_time < max_wait:
-                response = await client.get(url, params=payload, headers=headers)
-                logger.info(f"Poll response: status={response.status_code}, body={response.text[:500]}")
 
-                if response.status_code != 200:
-                    raise Exception(f"Poll failed: {response.status_code}")
+        while time.time() - start_time < max_wait:
+            request = CommonRequest()
+            request.set_method('GET')
+            request.set_domain(self.filetrans_domain)
+            request.set_version('2018-08-17')
+            request.set_action_name('GetTaskResult')
+            request.add_query_param('TaskId', task_id)
 
-                result = response.json()
+            try:
+                response = self._client.do_action_with_exception(request)
+                result = json.loads(response)
+                logger.info(f"Poll response: {json.dumps(result, ensure_ascii=False)[:300]}")
+
                 status_code = result.get('StatusCode')
 
                 if status_code == 21050000:  # SUCCESS
@@ -210,8 +190,11 @@ class AliyunASR(ASRProvider):
                     return TranscriptionResult(text="", segments=[], duration=0, language="zh")
                 else:
                     raise Exception(f"Task failed: {result.get('StatusText', f'StatusCode={status_code}')}")
+            except Exception as e:
+                logger.error(f"Poll failed: {e}", exc_info=True)
+                raise
 
-                import asyncio
-                await asyncio.sleep(interval)
+            import asyncio
+            await asyncio.sleep(interval)
 
-            raise TimeoutError(f"ASR task timeout after {max_wait}s")
+        raise TimeoutError(f"ASR task timeout after {max_wait}s")
