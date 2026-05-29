@@ -10,6 +10,7 @@ import time
 import uuid
 from base64 import encodebytes
 from datetime import datetime, timezone
+from typing import Dict, Optional
 from urllib.parse import quote, urlencode
 
 import httpx
