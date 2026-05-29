@@ -12,6 +12,22 @@ RUN apt-get update && \
     ffmpeg \
     libmupdf-dev \
     swig \
+    # Chromium 依赖 (用于 requests-html JavaScript 渲染)
+    chromium \
+    chromium-driver \
+    libnss3 \
+    libatk-bridge2.0-0 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
+    libgbm1 \
+    libpango-1.0-0 \
+    libcairo2 \
+    libasound2 \
+    libatspi2.0-0 \
+    libxshmfence1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 设置 pip 使用国内镜像源（清华源）

@@ -24,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-url_extractor = URLExtractor(timeout=15, max_retries=3)
+url_extractor = URLExtractor(timeout=15, max_retries=3, render_js=True)
 
 
 class SummarizeRequest(BaseModel):

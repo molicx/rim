@@ -1,6 +1,6 @@
 """
 URL 内容提取模块
-增强版：支持反爬虫、多编码、智能内容提取
+增强版：支持反爬虫、多编码、智能内容提取、JavaScript 渲染
 """
 import re
 import requests
@@ -8,6 +8,13 @@ from bs4 import BeautifulSoup
 from typing import Dict, List, Optional
 import logging
 import random
+
+# 尝试导入 requests_html 用于 JavaScript 渲染
+try:
+    from requests_html import HTMLSession
+    HAS_REQUESTS_HTML = True
+except ImportError:
+    HAS_REQUESTS_HTML = False
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +84,16 @@ REMOVE_ATTRS = ['class', 'id', 'style', 'onclick', 'onload']
 class URLExtractor:
     """增强版 URL 内容提取器"""
 
-    def __init__(self, timeout: int = 20, max_retries: int = 3):
+    def __init__(self, timeout: int = 20, max_retries: int = 3, render_js: bool = False):
         self.timeout = timeout
         self.max_retries = max_retries
         self.session = requests.Session()
+        self.render_js = render_js and HAS_REQUESTS_HTML
+        if self.render_js:
+            self.html_session = HTMLSession()
+            # 设置 Chromium 路径（如果需要）
+            import os
+            os.environ['PYPPETEER_CHROMIUM_REVISION'] = 'latest'
 
     def _get_headers(self, url: str) -> Dict[str, str]:
         """生成请求头"""
@@ -100,10 +113,22 @@ class URLExtractor:
             'Referer': f"{parsed.scheme}://{parsed.netloc}/",
         }
 
-    def extract(self, url: str) -> Dict[str, str]:
+    def extract(self, url: str, allow_js_render: bool = True) -> Dict[str, str]:
         """提取 URL 内容"""
-        html_content = self._fetch_url(url)
-        return self._parse_html(html_content)
+        try:
+            html_content = self._fetch_url(url)
+            result = self._parse_html(html_content)
+            # 检查提取的文本是否足够长
+            if len(result.get('text', '')) < 200 and allow_js_render and self.render_js:
+                logger.info(f"文本过短({len(result.get('text', ''))}字符)，尝试 JavaScript 渲染...")
+                return self._extract_with_js(url)
+            return result
+        except ValueError as e:
+            # 如果是 JavaScript 渲染页面，并且允许 JS 渲染
+            if "JavaScript" in str(e) and allow_js_render and self.render_js:
+                logger.info(f"检测到 JavaScript 渲染页面，尝试 JS 渲染...")
+                return self._extract_with_js(url)
+            raise
 
     def _fetch_url(self, url: str) -> str:
         """获取 URL 内容，带重试和编码处理"""
@@ -143,6 +168,28 @@ class URLExtractor:
                 logger.warning(f"Attempt {attempt + 1} failed for {url}: {e}")
 
         raise last_error or Exception(f"Failed to fetch URL after {self.max_retries} attempts")
+
+    def _extract_with_js(self, url: str) -> Dict[str, str]:
+        """使用 JavaScript 渲染提取内容"""
+        if not HAS_REQUESTS_HTML:
+            raise ValueError("requests_html 未安装，无法进行 JavaScript 渲染。请安装: pip install requests-html")
+        
+        try:
+            logger.info(f"使用 JavaScript 渲染提取: {url}")
+            response = self.html_session.get(url, timeout=self.timeout * 2)  # JS 渲染需要更多时间
+            
+            # 渲染 JavaScript
+            response.html.render(timeout=20, sleep=2)  # 等待 JS 执行
+            
+            # 获取渲染后的 HTML
+            html_content = response.html.html
+            
+            # 解析渲染后的内容
+            return self._parse_html(html_content)
+            
+        except Exception as e:
+            logger.error(f"JavaScript 渲染失败: {e}")
+            raise ValueError(f"JavaScript 渲染失败: {str(e)}")
 
     def _detect_encoding(self, response: requests.Response) -> str:
         """智能编码检测"""

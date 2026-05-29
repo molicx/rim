@@ -64,7 +64,7 @@ func (h *SummaryHandler) CreateSummary(c *gin.Context) {
 	} else if req.URL != "" {
 		extractedText, extractedTitle, err := h.extractTextFromURL(req.URL)
 		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to extract text from URL"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
 		text = extractedText
@@ -248,12 +248,20 @@ func (h *SummaryHandler) extractTextFromURL(url string) (string, string, error) 
 	jsonData, _ := json.Marshal(map[string]string{"url": url})
 	resp, err := http.Post(h.PythonAIURL+"/api/v1/extract", "application/json", bytes.NewBuffer(jsonData))
 	if err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("无法连接到内容提取服务: %v", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", "", fmt.Errorf("failed to extract text")
+		body, _ := io.ReadAll(resp.Body)
+		// 尝试解析 Python 服务的错误响应
+		var errorResponse struct {
+			Detail string `json:"detail"`
+		}
+		if json.Unmarshal(body, &errorResponse) == nil && errorResponse.Detail != "" {
+			return "", "", fmt.Errorf("内容提取失败: %s", errorResponse.Detail)
+		}
+		return "", "", fmt.Errorf("内容提取服务返回错误 (状态码: %d): %s", resp.StatusCode, string(body))
 	}
 
 	var result struct {
@@ -261,7 +269,7 @@ func (h *SummaryHandler) extractTextFromURL(url string) (string, string, error) 
 		Title string `json:"title"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return "", "", err
+		return "", "", fmt.Errorf("解析提取结果失败: %v", err)
 	}
 
 	return result.Text, result.Title, nil
