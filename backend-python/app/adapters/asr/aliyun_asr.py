@@ -2,15 +2,17 @@
 阿里云智能语音交互 ASR 适配器
 使用录音文件识别接口（异步），支持长音频
 """
+import hashlib
+import hmac
 import json
 import os
 import time
 import uuid
+from base64 import encodebytes
 from typing import Dict, Optional
+from urllib.parse import quote, urlencode
 
 import httpx
-from aliyunsdkcore.client import AcsClient
-from aliyunsdkcore.request import CommonRequest
 
 from . import ASRProvider, TranscriptionResult, TranscriptionSegment
 
@@ -27,11 +29,6 @@ class AliyunASR(ASRProvider):
         self.access_key_secret = config.get('access_key_secret', '')
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
-        self._client = AcsClient(
-            self.access_key_id,
-            self.access_key_secret,
-            self.region
-        )
         # OSS 配置
         self.oss_access_key_id = os.getenv('OSS_ACCESS_KEY_ID', self.access_key_id)
         self.oss_access_key_secret = os.getenv('OSS_ACCESS_KEY_SECRET', self.access_key_secret)
@@ -48,8 +45,26 @@ class AliyunASR(ASRProvider):
             config.get('app_key')
         )
 
+    def _sign(self, params: dict, method: str = 'POST') -> str:
+        """阿里云 POP API 签名"""
+        params['Format'] = 'JSON'
+        params['AccessKeyId'] = self.access_key_id
+        params['SignatureMethod'] = 'HMAC-SHA1'
+        params['SignatureVersion'] = '1.0'
+        params['SignatureNonce'] = uuid.uuid4().hex
+        params['Timestamp'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+        sorted_params = sorted(params.items())
+        canonical_query = urlencode(sorted_params, quote_via=lambda s, *a, **k: quote(str(s), safe='~'))
+        string_to_sign = f"{method}&%2F&{quote(canonical_query, safe='~')}"
+        key = (self.access_key_secret + '&').encode('utf-8')
+        signature = encodebytes(hmac.new(key, string_to_sign.encode('utf-8'), hashlib.sha1).digest()).decode('utf-8').strip()
+
+        params['Signature'] = signature
+        return urlencode(params)
+
     def _upload_to_oss(self, audio_path: str) -> tuple:
-        """上传音频文件到 OSS"""
+        """上传音频文件到 OSS，返回公开可读的 URL"""
         try:
             import oss2
         except ImportError:
@@ -58,8 +73,14 @@ class AliyunASR(ASRProvider):
         auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
         bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
         object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
-        bucket.put_object_from_file(object_key, audio_path)
-        url = bucket.sign_url('GET', object_key, 3600)
+
+        # 以公开读权限上传
+        headers = {'x-oss-object-acl': 'public-read'}
+        bucket.put_object_from_file(object_key, audio_path, headers=headers)
+
+        # 生成公开访问 URL
+        url = f"https://{self.oss_bucket}.{self.oss_endpoint}/{object_key}"
+        logger.info(f"OSS upload done, public url={url}")
         return url, object_key
 
     def _cleanup_oss(self, object_key: str):
@@ -86,59 +107,79 @@ class AliyunASR(ASRProvider):
 
     async def _submit_task(self, audio_url: str) -> str:
         """提交录音文件识别任务"""
-        request = CommonRequest()
-        request.set_method('POST')
-        request.set_domain(self.filetrans_domain)
-        request.set_version('2018-08-17')
-        request.set_action_name('SubmitTask')
-        request.add_body_params('AppKey', self.app_key)
-        request.add_body_params('FileLink', audio_url)
-        request.add_body_params('EnablePunctuationPrediction', 'true')
-        request.add_body_params('EnableInverseTextNormalization', 'true')
-        request.add_body_params('EnableSampleRateAdaptive', 'true')
+        url = f"https://{self.filetrans_domain}/"
 
-        response = self._client.do_action_with_exception(request)
-        result = json.loads(response)
-        logger.info(f"Submit response: {json.dumps(result, ensure_ascii=False)[:300]}")
+        params = {
+            'Action': 'SubmitTask',
+            'Version': '2018-08-17',
+            'AppKey': self.app_key,
+            'FileLink': audio_url,
+            'ServiceVersion': '4.0',
+            'EnablePunctuationPrediction': 'true',
+            'EnableInverseTextNormalization': 'true',
+            'EnableSampleRateAdaptive': 'true',
+        }
 
-        if result.get('StatusCode') != 21050000:
-            raise Exception(f"Submit failed: {result.get('StatusText', 'Unknown')}")
-        return result['TaskId']
+        body = self._sign(params, 'POST')
+
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                content=body,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'}
+            )
+            logger.info(f"Submit response: status={response.status_code}, body={response.text[:500]}")
+
+            if response.status_code != 200:
+                raise Exception(f"Submit failed: {response.status_code}, body={response.text[:200]}")
+
+            result = response.json()
+            status_code = result.get('StatusCode')
+            if status_code != 21050000:
+                raise Exception(f"Submit failed: {result.get('StatusText', f'StatusCode={status_code}')}")
+
+            return result['TaskId']
 
     async def _poll_result(self, task_id: str, max_wait: int = 600, interval: int = 5) -> TranscriptionResult:
         """轮询识别结果"""
         import asyncio
+        url = f"https://{self.filetrans_domain}/"
         start_time = time.time()
 
         while time.time() - start_time < max_wait:
-            request = CommonRequest()
-            request.set_method('GET')
-            request.set_domain(self.filetrans_domain)
-            request.set_version('2018-08-17')
-            request.set_action_name('GetTaskResult')
-            request.add_query_param('TaskId', task_id)
+            params = {
+                'Action': 'GetTaskResult',
+                'Version': '2018-08-17',
+                'TaskId': task_id,
+            }
+            query_string = self._sign(params, 'GET')
 
-            response = self._client.do_action_with_exception(request)
-            result = json.loads(response)
-            logger.info(f"Poll response: {json.dumps(result, ensure_ascii=False)[:300]}")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{url}?{query_string}")
+                logger.info(f"Poll response: status={response.status_code}, body={response.text[:300]}")
 
-            status_code = result.get('StatusCode')
-            if status_code == 21050000:
-                sentences = result.get('Result', {}).get('Sentences', [])
-                text = ' '.join(s.get('Text', '') for s in sentences)
-                segments = [TranscriptionSegment(
-                    start=s.get('BeginTime', 0) / 1000,
-                    end=s.get('EndTime', 0) / 1000,
-                    text=s.get('Text', '')
-                ) for s in sentences]
-                return TranscriptionResult(text=text, segments=segments,
-                                           duration=result.get('BizDuration', 0) / 1000, language="zh")
-            elif status_code in (21050001, 21050002):
-                logger.info(f"Task {result.get('StatusText')}, waiting...")
-            elif status_code == 21050003:
-                return TranscriptionResult(text="", segments=[], duration=0, language="zh")
-            else:
-                raise Exception(f"Task failed: {result.get('StatusText', status_code)}")
+                if response.status_code != 200:
+                    raise Exception(f"Poll failed: {response.status_code}")
+
+                result = response.json()
+                status_code = result.get('StatusCode')
+
+                if status_code == 21050000:
+                    sentences = result.get('Result', {}).get('Sentences', [])
+                    text = ' '.join(s.get('Text', '') for s in sentences)
+                    segments = [TranscriptionSegment(
+                        start=s.get('BeginTime', 0) / 1000,
+                        end=s.get('EndTime', 0) / 1000,
+                        text=s.get('Text', '')
+                    ) for s in sentences]
+                    return TranscriptionResult(text=text, segments=segments,
+                                               duration=result.get('BizDuration', 0) / 1000, language="zh")
+                elif status_code in (21050001, 21050002):
+                    logger.info(f"Task {result.get('StatusText')}, waiting...")
+                elif status_code == 21050003:
+                    return TranscriptionResult(text="", segments=[], duration=0, language="zh")
+                else:
+                    raise Exception(f"Task failed: {result.get('StatusText', status_code)}")
 
             await asyncio.sleep(interval)
 
