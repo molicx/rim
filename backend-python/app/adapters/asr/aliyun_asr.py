@@ -70,10 +70,9 @@ class AliyunASR(ASRProvider):
         except ImportError:
             raise ImportError("oss2 is required. Install: pip install oss2")
 
-        # 使用内网 endpoint 上传
-        internal_endpoint = f"oss-{self.oss_region}-internal.aliyuncs.com"
+        # 使用公网 endpoint 上传
         auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
-        bucket = oss2.Bucket(auth, internal_endpoint, self.oss_bucket)
+        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
         object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
         bucket.put_object_from_file(object_key, audio_path)
 
@@ -86,9 +85,8 @@ class AliyunASR(ASRProvider):
         """清理 OSS 临时文件"""
         try:
             import oss2
-            internal_endpoint = f"oss-{self.oss_region}-internal.aliyuncs.com"
             auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
-            bucket = oss2.Bucket(auth, internal_endpoint, self.oss_bucket)
+            bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
             bucket.delete_object(object_key)
         except Exception as e:
             logger.warning(f"Failed to cleanup OSS: {e}")
