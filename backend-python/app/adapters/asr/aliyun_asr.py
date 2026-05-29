@@ -33,6 +33,8 @@ class AliyunASR(ASRProvider):
             self.region
         )
         # OSS 配置（从环境变量读取）
+        self.oss_access_key_id = os.getenv('OSS_ACCESS_KEY_ID', self.access_key_id)
+        self.oss_access_key_secret = os.getenv('OSS_ACCESS_KEY_SECRET', self.access_key_secret)
         self.oss_bucket = os.getenv('OSS_BUCKET', '')
         self.oss_endpoint = os.getenv('OSS_ENDPOINT', f'oss-{self.region}.aliyuncs.com')
         self.oss_region = os.getenv('OSS_REGION', self.region)
@@ -53,7 +55,7 @@ class AliyunASR(ASRProvider):
         except ImportError:
             raise ImportError("oss2 is required. Install: pip install oss2")
 
-        auth = oss2.Auth(self.access_key_id, self.access_key_secret)
+        auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
         bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
 
         object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
@@ -70,7 +72,7 @@ class AliyunASR(ASRProvider):
         """清理 OSS 临时文件"""
         try:
             import oss2
-            auth = oss2.Auth(self.access_key_id, self.access_key_secret)
+            auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
             bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket)
             bucket.delete_object(object_key)
             logger.info(f"Deleted oss://{self.oss_bucket}/{object_key}")
