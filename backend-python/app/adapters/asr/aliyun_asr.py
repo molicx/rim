@@ -2,15 +2,17 @@
 阿里云智能语音交互 ASR 适配器
 使用录音文件识别接口（异步），支持长音频
 """
+import hashlib
+import hmac
 import json
 import os
 import time
 import uuid
+from base64 import encodebytes
 from typing import Dict, Optional
+from urllib.parse import quote, urlencode
 
 import httpx
-from aliyunsdkcore.client import AcsClient
-from aliyunsdkcore.request import CommonRequest
 
 from . import ASRProvider, TranscriptionResult, TranscriptionSegment
 
@@ -27,11 +29,6 @@ class AliyunASR(ASRProvider):
         self.access_key_secret = config.get('access_key_secret', '')
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
-        self._client = AcsClient(
-            self.access_key_id,
-            self.access_key_secret,
-            self.region
-        )
         # OSS 配置（从环境变量读取）
         self.oss_access_key_id = os.getenv('OSS_ACCESS_KEY_ID', self.access_key_id)
         self.oss_access_key_secret = os.getenv('OSS_ACCESS_KEY_SECRET', self.access_key_secret)
@@ -47,6 +44,31 @@ class AliyunASR(ASRProvider):
             config.get('access_key_secret') and
             config.get('app_key')
         )
+
+    def _sign(self, params: dict) -> dict:
+        """阿里云 POP API 签名"""
+        # 添加公共参数
+        params['Format'] = 'JSON'
+        params['Version'] = '2018-08-17'
+        params['AccessKeyId'] = self.access_key_id
+        params['SignatureMethod'] = 'HMAC-SHA1'
+        params['SignatureVersion'] = '1.0'
+        params['SignatureNonce'] = uuid.uuid4().hex
+        params['Timestamp'] = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
+
+        # 排序并编码
+        sorted_params = sorted(params.items())
+        canonical_query = urlencode(sorted_params, quote_via=lambda s, *a, **k: quote(str(s), safe=''))
+
+        # 签名字符串
+        string_to_sign = f"POST&%2F&{quote(canonical_query, safe='')}"
+
+        # HMAC-SHA1 签名
+        key = (self.access_key_secret + '&').encode('utf-8')
+        signature = encodebytes(hmac.new(key, string_to_sign.encode('utf-8'), hashlib.sha1).digest()).decode('utf-8').strip()
+
+        params['Signature'] = signature
+        return params
 
     def _upload_to_oss(self, audio_path: str) -> tuple:
         """上传音频文件到 OSS，返回 (临时 URL, object_key)"""
@@ -104,20 +126,11 @@ class AliyunASR(ASRProvider):
             self._cleanup_oss(object_key)
 
     async def _submit_task(self, audio_url: str) -> str:
-        """提交录音文件识别任务（使用阿里云 POP API）"""
+        """提交录音文件识别任务"""
         url = f"https://{self.filetrans_domain}/"
 
-        # POP API 参数
         params = {
             'Action': 'SubmitTask',
-            'Version': '2018-08-17',
-            'Format': 'JSON',
-            'AccessKeyId': self.access_key_id,
-            'SignatureMethod': 'HMAC-SHA1',
-            'SignatureVersion': '1.0',
-            'SignatureNonce': uuid.uuid4().hex,
-            'Timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
-            # 业务参数
             'AppKey': self.app_key,
             'FileLink': audio_url,
             'EnablePunctuationPrediction': 'true',
@@ -125,45 +138,48 @@ class AliyunASR(ASRProvider):
             'EnableSampleRateAdaptive': 'true',
         }
 
-        # 使用 AcsClient 签名
-        request = CommonRequest()
-        request.set_method('POST')
-        request.set_domain(self.filetrans_domain)
-        request.set_version('2018-08-17')
-        request.set_action_name('SubmitTask')
-        request.set_query_params(params)
+        signed_params = self._sign(params)
+        body = urlencode(signed_params)
 
-        try:
-            response = self._client.do_action_with_exception(request)
-            result = json.loads(response)
-            logger.info(f"Submit response: {json.dumps(result, ensure_ascii=False)[:500]}")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                url,
+                content=body,
+                headers={'Content-Type': 'application/x-www-form-urlencoded'}
+            )
+            logger.info(f"Submit response: status={response.status_code}, body={response.text[:500]}")
 
+            if response.status_code != 200:
+                raise Exception(f"Submit failed: {response.status_code}, body={response.text[:200]}")
+
+            result = response.json()
             status_code = result.get('StatusCode')
             if status_code != 21050000:
                 raise Exception(f"Submit failed: {result.get('StatusText', f'StatusCode={status_code}')}")
 
             return result['TaskId']
-        except Exception as e:
-            logger.error(f"Submit failed: {e}", exc_info=True)
-            raise
 
     async def _poll_result(self, task_id: str, max_wait: int = 600, interval: int = 5) -> TranscriptionResult:
         """轮询识别结果"""
+        url = f"https://{self.filetrans_domain}/"
         start_time = time.time()
 
         while time.time() - start_time < max_wait:
-            request = CommonRequest()
-            request.set_method('GET')
-            request.set_domain(self.filetrans_domain)
-            request.set_version('2018-08-17')
-            request.set_action_name('GetTaskResult')
-            request.add_query_param('TaskId', task_id)
+            params = {
+                'Action': 'GetTaskResult',
+                'TaskId': task_id,
+            }
+            signed_params = self._sign(params)
+            query_string = urlencode(signed_params)
 
-            try:
-                response = self._client.do_action_with_exception(request)
-                result = json.loads(response)
-                logger.info(f"Poll response: {json.dumps(result, ensure_ascii=False)[:300]}")
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                response = await client.get(f"{url}?{query_string}")
+                logger.info(f"Poll response: status={response.status_code}, body={response.text[:300]}")
 
+                if response.status_code != 200:
+                    raise Exception(f"Poll failed: {response.status_code}")
+
+                result = response.json()
                 status_code = result.get('StatusCode')
 
                 if status_code == 21050000:  # SUCCESS
@@ -184,17 +200,12 @@ class AliyunASR(ASRProvider):
                         duration=duration,
                         language="zh"
                     )
-                elif status_code == 21050001:  # RUNNING
-                    logger.info("Task running, waiting...")
-                elif status_code == 21050002:  # QUEUEING
-                    logger.info("Task queueing, waiting...")
+                elif status_code in (21050001, 21050002):  # RUNNING or QUEUEING
+                    logger.info(f"Task status: {result.get('StatusText')}, waiting...")
                 elif status_code == 21050003:  # SUCCESS_WITH_NO_VALID_FRAGMENT
                     return TranscriptionResult(text="", segments=[], duration=0, language="zh")
                 else:
                     raise Exception(f"Task failed: {result.get('StatusText', f'StatusCode={status_code}')}")
-            except Exception as e:
-                logger.error(f"Poll failed: {e}", exc_info=True)
-                raise
 
             import asyncio
             await asyncio.sleep(interval)
