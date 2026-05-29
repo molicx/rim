@@ -29,12 +29,15 @@ class AliyunASR(ASRProvider):
         self.access_key_secret = config.get('access_key_secret', '')
         self.app_key = config.get('app_key', '')
         self.region = config.get('region', 'cn-shanghai')
-        # OSS 配置
+        self.oss_upload_timeout = config.get('oss_upload_timeout', 600)
+        # OSS 配置（优先使用 env，其次使用 access_key 同源配置）
         self.oss_access_key_id = os.getenv('OSS_ACCESS_KEY_ID', self.access_key_id)
         self.oss_access_key_secret = os.getenv('OSS_ACCESS_KEY_SECRET', self.access_key_secret)
         self.oss_bucket = os.getenv('OSS_BUCKET', '')
         self.oss_endpoint = os.getenv('OSS_ENDPOINT', f'oss-{self.region}.aliyuncs.com')
         self.oss_region = os.getenv('OSS_REGION', self.region)
+        if not self.oss_bucket:
+            logger.warning("OSS_BUCKET not configured, Aliyun ASR will fail")
         # 录音文件识别 API 域名
         self.filetrans_domain = f"filetrans.{self.region}.aliyuncs.com"
 
@@ -70,16 +73,21 @@ class AliyunASR(ASRProvider):
         except ImportError:
             raise ImportError("oss2 is required. Install: pip install oss2")
 
-        # 使用公网 endpoint 上传，设置超时 300 秒
+        file_size = os.path.getsize(audio_path)
+        logger.info(f"Uploading to OSS: {audio_path}, size={file_size/1024/1024:.2f}MB, endpoint={self.oss_endpoint}")
+
         auth = oss2.Auth(self.oss_access_key_id, self.oss_access_key_secret)
-        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket, timeout=300)
+        bucket = oss2.Bucket(auth, self.oss_endpoint, self.oss_bucket, timeout=self.oss_upload_timeout)
         object_key = f"asr-temp/{uuid.uuid4().hex}.mp3"
-        bucket.put_object_from_file(object_key, audio_path)
+        try:
+            bucket.put_object_from_file(object_key, audio_path)
+        except Exception as e:
+            logger.error(f"OSS upload failed: {e}")
+            raise
 
         # 生成带签名的临时访问 URL（有效期 1 小时）
         url = bucket.sign_url('GET', object_key, 3600, slash_safe=False)
-        # URL encode the signature to ensure special chars are properly encoded
-        logger.info(f"OSS upload done, signed url={url[:120]}...")
+        logger.info(f"OSS upload done, size={file_size/1024/1024:.2f}MB, url={url[:120]}...")
         return url, object_key
 
     def _cleanup_oss(self, object_key: str):
@@ -95,7 +103,8 @@ class AliyunASR(ASRProvider):
     async def transcribe(self, audio_path: str, options: dict = None) -> TranscriptionResult:
         """转写音频文件"""
         options = options or {}
-        logger.info(f"Aliyun ASR: {audio_path}, size={os.path.getsize(audio_path)/1024/1024:.2f}MB")
+        file_size_mb = os.path.getsize(audio_path) / 1024 / 1024
+        logger.info(f"Aliyun ASR: {audio_path}, size={file_size_mb:.2f}MB")
 
         oss_url, object_key = self._upload_to_oss(audio_path)
         try:

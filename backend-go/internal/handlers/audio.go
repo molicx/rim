@@ -346,7 +346,7 @@ func (h *AudioHandler) submitTranscriptionTaskToCelery(taskID uint, audioPath, p
 		if apiSecret != "" {
 			providerConfig["access_key_secret"] = apiSecret
 		}
-		providerConfig["access_key_id"] = config.AccessKeyID
+		providerConfig["access_key_id"] = apiKey
 		providerConfig["app_key"] = config.AppKey
 	}
 

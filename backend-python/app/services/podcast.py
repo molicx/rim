@@ -95,18 +95,32 @@ async def fetch_rss_feed(url: str, timeout: int = 30) -> Dict:
             if audio_url and ('audio' in enclosure_type or not enclosure_type):
                 pass  # 找到音频
 
-        # 备用：查找 media:content
+        # 备用：查找 media:content（支持带命名空间前缀和不带前缀的写法）
         if not audio_url:
-            media = item.find('.//{http://search.yahoo.com/mrss/}content')
+            media_ns = 'http://search.yahoo.com/mrss/'
+            media = item.find(f'.//{{{media_ns}}}content')
+            if media is None:
+                media = item.find('.//media:content', {'media': media_ns})
             if media is not None:
-                audio_url = media.get('url')
+                media_url = media.get('url')
+                media_type = media.get('type', '')
+                if media_url and ('audio' in media_type or not media_type):
+                    audio_url = media_url
 
-        # Atom 格式 link
+        # Atom 格式 link（同时查找有命名空间前缀和无前缀的写法）
         if not audio_url:
-            for link in item.findall('.//atom:link', {'atom': 'http://www.w3.org/2005/Atom'}):
+            atom_ns = 'http://www.w3.org/2005/Atom'
+            # 带 atom: 前缀
+            for link in item.findall(f'.//{{{atom_ns}}}link'):
                 if link.get('rel') == 'enclosure' and 'audio' in link.get('type', ''):
                     audio_url = link.get('href')
                     break
+            # 无前缀（默认 namespace）
+            if not audio_url:
+                for link in item.findall('.//{http://www.w3.org/2005/Atom}link'):
+                    if link.get('rel') == 'enclosure' and 'audio' in link.get('type', ''):
+                        audio_url = link.get('href')
+                        break
 
         if not audio_url:
             raise ValueError("RSS 中未找到音频链接")

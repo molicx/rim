@@ -293,46 +293,6 @@ async def transcribe_async(request: TranscribeAsyncRequest):
 
 # ==================== 播客链接处理 API ====================
 
-class TranscriptionCallbackRequest(BaseModel):
-    task_id: int
-    status: str
-    text: str = ""
-    segments: list = []
-    duration: float = 0
-    error: str = ""
-
-
-@app.post("/api/v1/transcription-callback")
-async def transcription_callback(request: TranscriptionCallbackRequest):
-    """Celery 任务完成回调，更新转写结果到数据库"""
-    import aiohttp
-    import json
-
-    # 调用 Go API 更新任务状态
-    go_api_url = os.getenv("GO_API_URL", "http://go-api:3000")
-    callback_data = {
-        "task_id": request.task_id,
-        "status": request.status,
-        "result": request.text,
-        "segments": json.dumps(request.segments) if request.segments else "",
-        "duration": request.duration,
-        "error": request.error,
-    }
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                f"{go_api_url}/internal/transcription-callback",
-                json=callback_data,
-            ) as resp:
-                if resp.status != 200:
-                    logger.error(f"Callback to Go API failed: {resp.status}")
-    except Exception as e:
-        logger.error(f"Callback error: {e}")
-
-    return {"status": "ok"}
-
-
 class ProcessPodcastRequest(BaseModel):
     url: str
     upload_dir: str = "/app/uploads"

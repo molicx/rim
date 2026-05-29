@@ -301,7 +301,6 @@ func (h *AIConfigHandler) CreateASRConfig(c *gin.Context) {
 		APIKey:         encryptedKey,
 		ApiSecret:      encryptedSecret,
 		AppID:          req.AppID,
-		AccessKeyID:    req.AccessKeyID,
 		AccessSecret:   encryptedAccessSecret,
 		AppKey:         req.AppKey,
 		Region:         req.Region,
@@ -394,7 +393,12 @@ func (h *AIConfigHandler) UpdateASRConfig(c *gin.Context) {
 		config.AppID = req.AppID
 	}
 	if req.AccessKeyID != "" {
-		config.AccessKeyID = req.AccessKeyID
+		encryptedKey, err := utils.Encrypt(req.AccessKeyID, h.EncryptionKey)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to encrypt access key"})
+			return
+		}
+		config.APIKey = encryptedKey
 	}
 	if req.AccessSecret != "" {
 		encryptedAccessSecret, err := utils.Encrypt(req.AccessSecret, h.EncryptionKey)
