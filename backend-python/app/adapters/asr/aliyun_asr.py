@@ -135,7 +135,6 @@ class AliyunASR(ASRProvider):
         payload = {
             'appkey': self.app_key,
             'file_link': audio_url,
-            'version': '4.0',
             'enable_punctuation_prediction': True,
             'enable_inverse_text_normalization': True,
             'enable_sample_rate_adaptive': True,
