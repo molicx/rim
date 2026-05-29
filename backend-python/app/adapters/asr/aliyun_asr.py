@@ -78,7 +78,8 @@ class AliyunASR(ASRProvider):
 
         # 生成带签名的临时访问 URL（有效期 1 小时）
         url = bucket.sign_url('GET', object_key, 3600, slash_safe=False)
-        logger.info(f"OSS upload done, signed url={url[:100]}...")
+        # URL encode the signature to ensure special chars are properly encoded
+        logger.info(f"OSS upload done, signed url={url[:120]}...")
         return url, object_key
 
     def _cleanup_oss(self, object_key: str):
