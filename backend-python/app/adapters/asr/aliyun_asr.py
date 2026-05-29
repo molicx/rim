@@ -2,16 +2,11 @@
 阿里云智能语音交互 ASR 适配器
 使用录音文件识别接口（异步），支持长音频
 """
-import hashlib
-import hmac
 import json
 import os
 import time
 import uuid
-from base64 import encodebytes
-from datetime import datetime, timezone
 from typing import Dict, Optional
-from urllib.parse import quote, urlencode
 
 import httpx
 from aliyunsdkcore.client import AcsClient
@@ -109,31 +104,6 @@ class AliyunASR(ASRProvider):
         except Exception as e:
             logger.warning(f"Failed to cleanup OSS file: {e}")
 
-    def _sign_request(self, method: str, params: dict) -> dict:
-        """生成阿里云 POP API 签名"""
-        # 公共参数
-        public_params = {
-            'Format': 'JSON',
-            'Version': '2019-02-28',
-            'AccessKeyId': self.access_key_id,
-            'SignatureMethod': 'HMAC-SHA1',
-            'Timestamp': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-            'SignatureVersion': '1.0',
-            'SignatureNonce': uuid.uuid4().hex,
-        }
-        # 合并参数
-        all_params = {**public_params, **params}
-        # 排序并编码
-        sorted_params = sorted(all_params.items())
-        canonical_query = urlencode(sorted_params, quote_via=quote)
-        # 生成签名字符串
-        string_to_sign = f"{method}&%2F&{quote(canonical_query, safe='')}"
-        # 计算签名
-        key = (self.access_key_secret + '&').encode('utf-8')
-        signature = encodebytes(hmac.new(key, string_to_sign.encode('utf-8'), hashlib.sha1).digest()).decode('utf-8').strip()
-        all_params['Signature'] = signature
-        return all_params
-
     async def transcribe(self, audio_path: str, options: dict = None) -> TranscriptionResult:
         """转写音频文件（录音文件识别，异步接口）"""
         options = options or {}
@@ -162,33 +132,31 @@ class AliyunASR(ASRProvider):
         """提交录音文件识别任务"""
         url = f"https://{self.filetrans_domain}/"
 
-        params = {
-            'Action': 'SubmitTask',
-            'AppKey': self.app_key,
-            'FileLink': audio_url,
-            'Version': '4.0',
-            'EnablePunctuationPrediction': 'true',
-            'EnableInverseTextNormalization': 'true',
-            'EnableSampleRateAdaptive': 'true',
+        payload = {
+            'appkey': self.app_key,
+            'file_link': audio_url,
+            'version': '4.0',
+            'enable_punctuation_prediction': True,
+            'enable_inverse_text_normalization': True,
+            'enable_sample_rate_adaptive': True,
         }
 
-        signed_params = self._sign_request('POST', params)
-        body = urlencode(signed_params)
+        headers = {
+            'X-NLS-Token': self._get_token(),
+            'Content-Type': 'application/json'
+        }
 
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                url,
-                content=body,
-                headers={'Content-Type': 'application/x-www-form-urlencoded'}
-            )
+            response = await client.post(url, json=payload, headers=headers)
             logger.info(f"Submit response: status={response.status_code}, body={response.text[:500]}")
 
             if response.status_code != 200:
                 raise Exception(f"Submit failed: {response.status_code}, body={response.text[:200]}")
 
             result = response.json()
-            if result.get('StatusCode') != 21050000:
-                raise Exception(f"Submit failed: {result.get('StatusText', 'Unknown error')}")
+            status_code = result.get('StatusCode')
+            if status_code != 21050000:
+                raise Exception(f"Submit failed: {result.get('StatusText', f'StatusCode={status_code}')}")
 
             return result['TaskId']
 
@@ -196,17 +164,19 @@ class AliyunASR(ASRProvider):
         """轮询识别结果"""
         url = f"https://{self.filetrans_domain}/"
 
+        headers = {
+            'X-NLS-Token': self._get_token(),
+            'Content-Type': 'application/json'
+        }
+
+        payload = {
+            'TaskId': task_id,
+        }
+
         start_time = time.time()
         async with httpx.AsyncClient(timeout=30.0) as client:
             while time.time() - start_time < max_wait:
-                params = {
-                    'Action': 'GetTaskResult',
-                    'TaskId': task_id,
-                }
-                signed_params = self._sign_request('GET', params)
-                query_string = urlencode(signed_params)
-
-                response = await client.get(f"{url}?{query_string}")
+                response = await client.get(url, params=payload, headers=headers)
                 logger.info(f"Poll response: status={response.status_code}, body={response.text[:500]}")
 
                 if response.status_code != 200:
