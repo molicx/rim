@@ -222,8 +222,8 @@ async def transcribe_audio(request: TranscribeAPIRequest):
         if not is_valid:
             raise HTTPException(status_code=400, detail=err_msg)
 
-        # 转换为 WAV 格式（如果需要）
-        audio_path = service.convert_to_wav(request.audio_path)
+        # 预处理音频文件（格式标准化）
+        audio_path = service.convert_for_asr(request.audio_path)
 
         # 执行转写
         result = await service.transcribe(

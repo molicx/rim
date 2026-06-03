@@ -532,6 +532,96 @@ func (h *AudioHandler) DeleteTranscriptionTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "删除成功"})
 }
 
+// SummarizeTranscription 从转写任务生成 AI 总结
+func (h *AudioHandler) SummarizeTranscription(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	taskID := c.Param("id")
+
+	var task models.TranscriptionTask
+	if err := h.DB.Where("id = ? AND user_id = ?", taskID, userID).First(&task).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "转写任务不存在"})
+		return
+	}
+
+	if task.Status != "completed" || task.Result == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "转写任务未完成，无法生成总结"})
+		return
+	}
+
+	var config models.AIConfig
+	if err := h.DB.Where("user_id = ? AND is_default = ?", userID, true).First(&config).Error; err != nil {
+		if err == gorm.ErrRecordNotFound {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "请先配置默认 AI 模型"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "查询 AI 配置失败"})
+		return
+	}
+
+	decryptedKey, err := utils.Decrypt(config.APIKey, h.EncryptionKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "API Key 解密失败"})
+		return
+	}
+
+	aiReq := PythonAIRequest{
+		Text:         task.Result,
+		Provider:     config.Provider,
+		Model:        config.Model,
+		APIKey:       decryptedKey,
+		ProviderType: config.ProviderType,
+		BaseURL:      config.BaseURL,
+	}
+
+	aiResp, err := CallPythonAI(h.PythonAIURL, aiReq)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("AI 总结服务错误: %v", err)})
+		return
+	}
+
+	keyPointsJSON, _ := json.Marshal(aiResp.KeyPoints)
+
+	summary := models.Summary{
+		UserID:       userID,
+		Title:        task.Title,
+		SourceType:   "transcription",
+		OriginalText: task.Result,
+		SummaryText:  aiResp.Summary,
+		KeyPoints:    string(keyPointsJSON),
+		Provider:     config.Provider,
+		Model:        config.Model,
+	}
+
+	if err := h.DB.Create(&summary).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存总结失败"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"id":          summary.ID,
+		"title":       summary.Title,
+		"summary":     summary.SummaryText,
+		"key_points":  aiResp.KeyPoints,
+		"provider":    summary.Provider,
+		"model":       summary.Model,
+		"created_at":  summary.CreatedAt,
+	})
+}
+
+// GetAudioFile 提供音频文件下载
+func (h *AudioHandler) GetAudioFile(c *gin.Context) {
+	userID := c.GetUint("user_id")
+	audioID := c.Param("id")
+
+	var audio models.Audio
+	if err := h.DB.Where("id = ? AND user_id = ?", audioID, userID).First(&audio).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "音频文件不存在"})
+		return
+	}
+
+	c.File(audio.FilePath)
+}
+
 // BatchDeleteTranscriptionTasks 批量删除转写任务
 func (h *AudioHandler) BatchDeleteTranscriptionTasks(c *gin.Context) {
 	userID := c.GetUint("user_id")

@@ -36,6 +36,7 @@ const Dashboard: React.FC = () => {
 
   const logout = useAuthStore((state) => state.logout);
   const navigate = useNavigate();
+  const [summarizingTaskId, setSummarizingTaskId] = useState<number | null>(null);
 
   useEffect(() => {
     loadConfigs();
@@ -63,8 +64,20 @@ const Dashboard: React.FC = () => {
   };
 
   const handleTranscriptionComplete = (_task?: TranscriptionTask) => {
-    // 刷新任务列表
     loadTranscriptionTasks();
+  };
+
+  const handleSummarizeTask = async (taskId: number) => {
+    setSummarizingTaskId(taskId);
+    try {
+      const response = await api.post(`/audio/transcriptions/${taskId}/summarize`);
+      navigate(`/summary/${response.data.id}`);
+    } catch (err: any) {
+      const errorMsg = err.response?.data?.error || err.message || '生成总结失败';
+      setError(errorMsg);
+    } finally {
+      setSummarizingTaskId(null);
+    }
   };
 
   const loadConfigs = async () => {
@@ -884,8 +897,30 @@ const Dashboard: React.FC = () => {
                                 <p className="mt-2 text-xs text-red-600 pl-6 line-clamp-2">{task.error}</p>
                               )}
                               {task.status === 'completed' && task.result && (
-                                <div className="mt-2 p-2 bg-white rounded-lg border border-slate-200 max-h-20 overflow-y-auto pl-6">
-                                  <p className="text-xs text-slate-600 line-clamp-3">{task.result}</p>
+                                <div className="mt-2 space-y-2 pl-6">
+                                  <div className="p-2 bg-white rounded-lg border border-slate-200 max-h-20 overflow-y-auto">
+                                    <p className="text-xs text-slate-600 line-clamp-3">{task.result}</p>
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleSummarizeTask(task.id);
+                                    }}
+                                    disabled={summarizingTaskId === task.id}
+                                    className="w-full py-1.5 px-3 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                  >
+                                    {summarizingTaskId === task.id ? (
+                                      <>
+                                        <svg className="w-3 h-3 animate-spin" fill="none" viewBox="0 0 24 24">
+                                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                                        </svg>
+                                        生成中...
+                                      </>
+                                    ) : (
+                                      '生成总结'
+                                    )}
+                                  </button>
                                 </div>
                               )}
                             </div>

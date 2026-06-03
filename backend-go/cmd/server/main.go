@@ -126,9 +126,11 @@ func main() {
 			protected.POST("/audio/transcribe", audioHandler.TranscribeAudio)
 			protected.GET("/audio/transcriptions", audioHandler.ListTranscriptionTasks)
 			protected.GET("/audio/transcriptions/:id", audioHandler.GetTranscriptionStatus)
+			protected.POST("/audio/transcriptions/:id/summarize", audioHandler.SummarizeTranscription)
 			protected.DELETE("/audio/transcriptions/:id", audioHandler.DeleteTranscriptionTask)
 			protected.POST("/audio/transcriptions/batch-delete", audioHandler.BatchDeleteTranscriptionTasks)
 			protected.POST("/audio/podcast", audioHandler.ProcessPodcastURL)
+			protected.GET("/audio/:id/file", audioHandler.GetAudioFile)
 		}
 	}
 

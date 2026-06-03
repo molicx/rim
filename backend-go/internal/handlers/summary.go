@@ -29,22 +29,6 @@ type CreateSummaryRequest struct {
 	Style      string `json:"style,omitempty"`  // points, paragraph, qa
 }
 
-type PythonAIRequest struct {
-	Text         string `json:"text"`
-	Provider     string `json:"provider"`
-	Model        string `json:"model"`
-	APIKey       string `json:"api_key"`
-	ProviderType string `json:"provider_type,omitempty"`
-	BaseURL      string `json:"base_url,omitempty"`
-	Length       string `json:"length,omitempty"`
-	Style        string `json:"style,omitempty"`
-}
-
-type PythonAIResponse struct {
-	Summary   string   `json:"summary"`
-	KeyPoints []string `json:"key_points"`
-}
-
 func (h *SummaryHandler) CreateSummary(c *gin.Context) {
 	userID := c.GetUint("user_id")
 
@@ -220,28 +204,7 @@ func (h *SummaryHandler) DeleteSummary(c *gin.Context) {
 }
 
 func (h *SummaryHandler) callPythonAI(req PythonAIRequest) (*PythonAIResponse, error) {
-	jsonData, err := json.Marshal(req)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := http.Post(h.PythonAIURL+"/api/v1/summarize", "application/json", bytes.NewBuffer(jsonData))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("AI service returned status %d: %s", resp.StatusCode, string(body))
-	}
-
-	var aiResp PythonAIResponse
-	if err := json.NewDecoder(resp.Body).Decode(&aiResp); err != nil {
-		return nil, err
-	}
-
-	return &aiResp, nil
+	return CallPythonAI(h.PythonAIURL, req)
 }
 
 func (h *SummaryHandler) extractTextFromURL(url string) (string, string, error) {
